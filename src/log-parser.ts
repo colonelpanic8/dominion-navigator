@@ -71,6 +71,14 @@ function normalizeLogCardName(rawName: string, knownCardNames: Map<string, strin
 function singularCandidates(name: string): string[] {
   const candidates: string[] = [];
   if (name.endsWith("ies")) candidates.push(`${name.slice(0, -3)}y`);
-  if (name.endsWith("s")) candidates.push(name.slice(0, -1));
-  return candidates;
+  if (name.endsWith("men")) candidates.push(`${name.slice(0, -3)}man`);
+  if (name.endsWith("es")) {
+    const withoutEs = name.slice(0, -2);
+    const withoutS = name.slice(0, -1);
+    if (/(?:ches|shes|xes|sses)$/i.test(name)) candidates.push(withoutS, withoutEs);
+    else candidates.push(withoutEs, withoutS);
+  } else if (name.endsWith("s")) {
+    candidates.push(name.slice(0, -1));
+  }
+  return [...new Set(candidates)];
 }

@@ -20,6 +20,30 @@ test("parses plural card lists using known card names", () => {
   assert.deepEqual(parseLogCardList("2 Duchies and 3 Curses", ["Curse", "Duchy"]), ["Duchy", "Duchy", "Curse", "Curse", "Curse"]);
 });
 
+test("parses es and men plural card names", () => {
+  assert.deepEqual(parseLogCardList("2 Fortresses, 2 Witches, and 2 Taxmen", ["Fortress", "Taxman", "Witch"]), [
+    "Fortress",
+    "Fortress",
+    "Witch",
+    "Witch",
+    "Taxman",
+    "Taxman"
+  ]);
+});
+
+test("falls back to likely singular card names when known names are incomplete", () => {
+  assert.deepEqual(parseLogCardList("2 Fortresses, 2 Witches, 2 Curses, and 2 Taxmen"), [
+    "Fortress",
+    "Fortress",
+    "Witch",
+    "Witch",
+    "Curse",
+    "Curse",
+    "Taxman",
+    "Taxman"
+  ]);
+});
+
 test("parses reaction logs", () => {
   assert.deepEqual(parseReactionLog("L reacts with a Moat.", ["Moat"]), {
     playerToken: "L",
