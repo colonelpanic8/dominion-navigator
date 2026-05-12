@@ -15,7 +15,7 @@ import {
   SerializedDeckKnowledgeTracker,
   ZoneKnowledge
 } from "./knowledge";
-import { parseRevealedHandLog } from "./log-parser";
+import { parseReactionLog, parseRevealedHandLog } from "./log-parser";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
@@ -437,8 +437,15 @@ function applyKnownHandFromLogText(text: string): boolean {
   const player = playerForLogToken(revealedHand.playerToken);
   if (!player) return false;
 
-  for (const cardName of revealedHand.cards) tracker.markKnownCardInZone(player, "HandZone", cardName);
-  return true;
+  return tracker.markKnownCardsInZone(player, "HandZone", revealedHand.cards);
+}
+
+function applyKnownReactionFromLogText(text: string): boolean {
+  const reaction = parseReactionLog(text, knownCardNamesForLogParsing());
+  if (!reaction) return false;
+  const player = playerForLogToken(reaction.playerToken);
+  if (!player) return false;
+  return tracker.markKnownCardsInZone(player, "HandZone", [reaction.card]);
 }
 
 function playerDisplayName(player: PlayerDeckKnowledge["player"] | ZoneSummary["owner"] | undefined): string {
@@ -697,12 +704,13 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   const text = element.textContent?.replace(/\s+/g, " ").trim();
   const isTopdeckLog = Boolean(text && TOPDECK_LOG_PATTERN.test(text));
   const isRevealedHandLog = Boolean(text && parseRevealedHandLog(text));
-  if (!text || (!isTopdeckLog && !isRevealedHandLog)) {
+  const isReactionLog = Boolean(text && parseReactionLog(text));
+  if (!text || (!isTopdeckLog && !isRevealedHandLog && !isReactionLog)) {
     seen.add(element);
     return;
   }
 
-  if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text)) {
+  if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text) && !applyKnownReactionFromLogText(text)) {
     if (!isTopdeckLog) {
       seen.add(element);
       return;

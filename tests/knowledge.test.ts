@@ -526,6 +526,32 @@ test("log-revealed topdeck converts one anonymous draw card into a known card", 
   ]);
 });
 
+test("revealed hand log location updates are idempotent", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(10, "HandZone", [], 5, opponent),
+        zone(11, "DrawZone", [], 5, opponent)
+      ],
+      "game-1",
+      ["Copper", "Copper", "Copper", "Copper", "Silver", "Silver", "Gold", "Gold", "Moat", "Estate"]
+    )
+  );
+
+  assert.equal(tracker.markKnownCardsInZone(opponent, "HandZone", ["Silver", "Silver", "Gold"]), true);
+  assert.equal(tracker.markKnownCardsInZone(opponent, "HandZone", ["Silver", "Silver", "Gold"]), true);
+  assert.equal(tracker.markKnownCardsInZone(opponent, "HandZone", ["Moat"]), true);
+  assert.equal(tracker.markKnownCardsInZone(opponent, "HandZone", ["Moat"]), true);
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const hand = opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(hand?.knownCards, { Gold: 1, Moat: 1, Silver: 2 });
+  assert.equal(hand?.ambiguousCount, 1);
+  assert.deepEqual(opponentKnowledge?.totalKnownOwned, { Copper: 4, Estate: 1, Gold: 2, Moat: 1, Silver: 2 });
+});
+
 test("marking the final unknown card updates confidence to observed", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "DrawZone", [], 1)]));

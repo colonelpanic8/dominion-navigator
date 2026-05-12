@@ -3,7 +3,13 @@ export type RevealedHandLog = {
   cards: string[];
 };
 
+export type ReactionLog = {
+  playerToken: string;
+  card: string;
+};
+
 const REVEALED_HAND_LOG_PATTERN = /^(.+?) reveals their hand: (.+)\.$/;
+const REACTION_LOG_PATTERN = /^(.+?) reacts with (.+?)\.$/;
 
 export function parseRevealedHandLog(text: string, knownCardNames: Iterable<string> = []): RevealedHandLog | undefined {
   const match = text.match(REVEALED_HAND_LOG_PATTERN);
@@ -14,6 +20,16 @@ export function parseRevealedHandLog(text: string, knownCardNames: Iterable<stri
     playerToken,
     cards: parseLogCardList(cardText, knownCardNames)
   };
+}
+
+export function parseReactionLog(text: string, knownCardNames: Iterable<string> = []): ReactionLog | undefined {
+  const match = text.match(REACTION_LOG_PATTERN);
+  if (!match) return undefined;
+  const [, playerToken, cardText] = match;
+  if (!playerToken || !cardText) return undefined;
+  const [card] = parseLogCardList(cardText, knownCardNames);
+  if (!card) return undefined;
+  return { playerToken, card };
 }
 
 export function parseLogCardList(text: string, knownCardNames: Iterable<string> = []): string[] {
