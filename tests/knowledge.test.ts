@@ -284,6 +284,36 @@ test("draw zone identities are not derived when the owned ledger is incomplete",
   assert.equal(draw?.unknownCount, 3);
 });
 
+test("same-owner revealed move converts unknown ownership to known ownership", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "DrawZone", [], 1),
+      zone(2, "HandZone", [])
+    ])
+  );
+
+  tracker.applyMove(moveWithNames(summaryZone(1, "DrawZone", ["Back"]), summaryZone(2, "HandZone", ["Silver"]), ["Silver"]));
+
+  const [knowledge] = tracker.summary().players;
+  const hand = knowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Silver: 1 });
+  assert.equal(knowledge?.totalUnknownOwned, 0);
+  assert.deepEqual(hand?.knownCards, { Silver: 1 });
+});
+
+test("snapshot reveal converts unknown ownership to known ownership", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Silver"])]));
+
+  const [knowledge] = tracker.summary().players;
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Silver: 1 });
+  assert.equal(knowledge?.totalUnknownOwned, 0);
+});
+
 test("opponent gains to discard do not enter hero discard", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(

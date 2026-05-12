@@ -252,6 +252,7 @@ export class DeckKnowledgeTracker {
       this.addToZone(toPlayer, move.to, names, count);
 
       if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) this.addToOwnedLedger(toPlayer, names, count);
+      else if (fromOwned && fromPlayerKey === toPlayerKey) this.reconcileKnownOwnedFromLocated(toPlayer);
     }
 
     if (fromPlayerKey && fromOwned && (!toOwned || fromPlayerKey !== toPlayerKey)) {
@@ -399,10 +400,7 @@ export class DeckKnowledgeTracker {
     }
     player.zones.set(key, zoneKnowledge);
 
-    for (const [card, count] of zoneKnowledge.knownCards) {
-      const currentKnownOwned = player.totalKnownOwned.get(card) ?? 0;
-      if (count > currentKnownOwned) player.totalKnownOwned.set(card, count);
-    }
+    this.reconcileKnownOwnedFromLocated(player);
   }
 
   private pruneZonesMissingFromSnapshot(snapshot: NavigatorSnapshot): void {
@@ -449,6 +447,21 @@ export class DeckKnowledgeTracker {
       for (const [card, count] of zone.knownCards) increment(player.totalKnownOwned, card, count);
       player.totalUnknownOwned += zone.unknownCount;
     }
+    player.confidence = player.totalUnknownOwned === 0 ? "observed" : "partial";
+  }
+
+  private reconcileKnownOwnedFromLocated(player: MutablePlayerKnowledge): void {
+    const locatedKnown = new Map<string, number>();
+    for (const zone of player.zones.values()) addCounter(locatedKnown, zone.knownCards);
+
+    for (const [card, count] of locatedKnown) {
+      const knownOwned = player.totalKnownOwned.get(card) ?? 0;
+      if (count <= knownOwned) continue;
+      const delta = count - knownOwned;
+      increment(player.totalKnownOwned, card, delta);
+      player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
+    }
+
     player.confidence = player.totalUnknownOwned === 0 ? "observed" : "partial";
   }
 
