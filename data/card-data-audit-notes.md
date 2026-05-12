@@ -151,12 +151,39 @@ The table kingdom code was:
 cellar, harbinger, vassal, village, bureaucrat, smithy, bandit, mine, sentry, artisan
 ```
 
-Game `#178428799` started with that supply, but after a 30-second wait it still reported `Loading game...`, `Your starting cards:`, and no visible active turn controls. The `Force end turn` control existed in the DOM but had zero size.
+Game `#178428799` started with that supply. The first pass appeared stuck because the DOM still reported `Loading game...`, `Your starting cards:`, and no normal DOM turn controls. Further inspection showed that Dominion had rendered a canvas-backed `Start Game` button through `game.questionModel.gameButtons`.
+
+### Canvas Controls for Playthroughs
+
+Useful controller/canvas interactions discovered while testing game `#178428799`:
+
+```js
+const game = window.__dominionNavigator.game;
+
+// Dismiss the "Your starting cards" prompt.
+game.questionModel.gameButtons.find((button) => button.text === "Start Game").onClick();
+
+// Play treasures once the buy phase is active.
+game.questionModel.gameButtons.find((button) => button.text === "Autoplay Treasures").onClick();
+
+// Buy a supply pile by invoking the card stack view click handler.
+// In the Base-only test kingdom, zone 13 was Vassal.
+game.state.zones[13].cardStacks[0].view.onclick();
+```
+
+After reloading the extension with the non-blocking card-move hook, this path reached `Turn 1 - colonelpanic8`, clicked `Autoplay Treasures`, and bought Vassal. The Dominion log confirmed:
+
+```text
+c plays 4 Coppers. (+$4)
+c buys and gains a Vassal.
+```
+
+The Vassal supply count dropped from 10 to 9. This is the first successful purchase of a `must-check` card in the audit kingdom.
 
 ### Current Testing Limitation
 
-The Dominion client did not expose active turn controls after either custom game reached the `Your starting cards:` state. The DOM reported the game id, supply, starting decks, and game tab strip, while screenshots showed the client in a loading state.
+The debug browser processes Dominion animations slowly, and forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
 
-Because of that, this session started custom-kingdom tests for the listed `must-check` cards but did not complete per-card playthrough verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
+Because of that, this session started custom-kingdom tests and successfully bought Vassal, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
 
 Next useful step: stabilize turn entry in the Dominion client, then play through the custom kingdom and record tracker observations for each card effect that moves, reveals, gains, trashes, exiles, sets aside, or otherwise changes card-location knowledge.
