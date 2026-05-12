@@ -989,3 +989,18 @@ test("discard snapshots are ignored even when they are empty", () => {
   assert.equal(discard?.knownCards.Copper, 1);
   assert.equal(discard?.totalCount, 1);
 });
+
+test("event-sourced discard knowledge follows zone index changes across snapshots", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Copper"]), zone(2, "DiscardZone", [])]));
+  tracker.applyMove(moveWithNames(summaryZone(1, "HandZone", ["Copper"]), summaryZone(2, "DiscardZone", ["Copper"]), ["Copper"]));
+
+  tracker.applySnapshot(snapshot([zone(20, "DiscardZone", [])]));
+
+  const [knowledge] = tracker.summary().players;
+  const discards = knowledge?.zones.filter((item) => item.zoneName === "DiscardZone");
+
+  assert.equal(discards?.length, 1);
+  assert.equal(discards?.[0]?.zoneKey, "20:DiscardZone");
+  assert.deepEqual(discards?.[0]?.knownCards, { Copper: 1 });
+});

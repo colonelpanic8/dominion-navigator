@@ -467,10 +467,37 @@ export class DeckKnowledgeTracker {
     const visibleZoneKeys = new Set(snapshot.playerZones.map(zoneKey));
     for (const player of this.players.values()) {
       for (const [key, zone] of player.zones) {
-        if (visibleZoneKeys.has(key) || isEventSourcedZone(zone.zoneName)) continue;
+        if (visibleZoneKeys.has(key)) continue;
+        if (isEventSourcedZone(zone.zoneName)) {
+          const replacementKey = this.visibleReplacementZoneKey(snapshot, player, zone);
+          if (replacementKey && replacementKey !== key) this.moveZoneKnowledge(player, key, replacementKey);
+          continue;
+        }
         player.zones.delete(key);
       }
     }
+  }
+
+  private visibleReplacementZoneKey(snapshot: NavigatorSnapshot, player: MutablePlayerKnowledge, zone: MutableZoneKnowledge): string | undefined {
+    const matches = snapshot.playerZones.filter((item) => item.zoneName === zone.zoneName && playerKey(item.owner) === playerKey(player.player));
+    return matches.length === 1 ? zoneKey(matches[0]!) : undefined;
+  }
+
+  private moveZoneKnowledge(player: MutablePlayerKnowledge, fromKey: string, toKey: string): void {
+    const from = player.zones.get(fromKey);
+    if (!from) return;
+
+    const existing = player.zones.get(toKey);
+    if (existing) {
+      addCounter(existing.knownCards, from.knownCards);
+      existing.unknownCount += from.unknownCount;
+    } else {
+      player.zones.set(toKey, {
+        ...from,
+        zoneKey: toKey
+      });
+    }
+    player.zones.delete(fromKey);
   }
 
   private getOrCreateZone(player: MutablePlayerKnowledge, zone: ZoneSummary): MutableZoneKnowledge {
