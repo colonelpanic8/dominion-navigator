@@ -50,8 +50,8 @@ type RuntimeZone = {
   zoneName?: string;
   owner?: RuntimePlayer;
   cardCount?: number;
-  cardStacks?: RuntimeCardStack[];
-  primaryStacks?: RuntimeCardStack[];
+  cardStacks?: Array<RuntimeCardStack | null | undefined>;
+  primaryStacks?: Array<RuntimeCardStack | null | undefined>;
 };
 
 type RuntimeTurn = {
@@ -180,8 +180,8 @@ function summarizeStack(stack: RuntimeCardStack): ZoneStackSummary {
 }
 
 function effectiveStacks(zone: RuntimeZone): RuntimeCardStack[] {
-  if (zone.primaryStacks && zone.primaryStacks.length > 0) return zone.primaryStacks;
-  return zone.cardStacks ?? [];
+  const stacks = zone.primaryStacks && zone.primaryStacks.length > 0 ? zone.primaryStacks : zone.cardStacks ?? [];
+  return stacks.filter((stack): stack is RuntimeCardStack => Boolean(stack));
 }
 
 function effectiveCardCount(zone: RuntimeZone): number {
@@ -316,6 +316,16 @@ function makeMoveSummary(game: RuntimeGame, move: RuntimeCardMove, phase: "befor
   };
 }
 
+function emitMoveSummary(game: RuntimeGame, move: RuntimeCardMove, phase: "before" | "after"): void {
+  try {
+    const summary = makeMoveSummary(game, move, phase);
+    win.__dominionNavigator?.events.push(summary);
+    post({ source: MESSAGE_SOURCE, type: "card-move", payload: summary });
+  } catch (error) {
+    status(false, `Failed to summarize ${phase} card move: ${String(error)}`);
+  }
+}
+
 function emitSnapshot(): void {
   const game = getGame();
   if (!game?.state) {
@@ -381,16 +391,17 @@ function installCardMoveHook(game: RuntimeGame): void {
   if (!execute || Reflect.get(execute, "__dominionNavigatorPatched")) return;
 
   const patched = function patchedCardMoveExecute(this: RuntimeCardMove, gameArg: RuntimeGame, done?: () => void): unknown {
-    const before = makeMoveSummary(gameArg, this, "before");
-    win.__dominionNavigator?.events.push(before);
-    post({ source: MESSAGE_SOURCE, type: "card-move", payload: before });
+    emitMoveSummary(gameArg, this, "before");
 
     return execute.call(this, gameArg, () => {
-      const after = makeMoveSummary(gameArg, this, "after");
-      win.__dominionNavigator?.events.push(after);
-      post({ source: MESSAGE_SOURCE, type: "card-move", payload: after });
-      emitSnapshot();
-      done?.();
+      try {
+        emitMoveSummary(gameArg, this, "after");
+        emitSnapshot();
+      } catch (error) {
+        status(false, `Failed to finish card move hook: ${String(error)}`);
+      } finally {
+        done?.();
+      }
     });
   };
 
