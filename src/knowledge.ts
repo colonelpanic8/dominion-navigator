@@ -119,6 +119,13 @@ function subtractCounter(target: Map<string, number>, source: Map<string, number
   return true;
 }
 
+function subtractCounterUpToAvailable(target: Map<string, number>, source: Map<string, number>): void {
+  for (const [card, count] of source) {
+    const current = target.get(card) ?? 0;
+    decrement(target, card, Math.min(current, count));
+  }
+}
+
 function counterFromNames(names: string[]): Map<string, number> {
   const counter = new Map<string, number>();
   for (const name of names) increment(counter, name);
@@ -204,6 +211,10 @@ function isEventSourcedZone(zoneName: string): boolean {
   return zoneName === "DiscardZone";
 }
 
+function isControlledOnlyDestination(zone: ZoneSummary | undefined): boolean {
+  return zone?.zoneName === "InPlayZone";
+}
+
 export class DeckKnowledgeTracker {
   private readonly players = new Map<string, MutablePlayerKnowledge>();
   private initialized = false;
@@ -239,7 +250,7 @@ export class DeckKnowledgeTracker {
       const toPlayer = this.ensurePlayer(move.to.owner);
       this.addToZone(toPlayer, move.to, names, count);
 
-      if (!fromOwned || fromPlayerKey !== toPlayerKey) this.addToOwnedLedger(toPlayer, names, count);
+      if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) this.addToOwnedLedger(toPlayer, names, count);
     }
 
     if (fromPlayerKey && fromOwned && (!toOwned || fromPlayerKey !== toPlayerKey)) {
@@ -488,7 +499,7 @@ export class DeckKnowledgeTracker {
 
     const remainder = cloneCounter(player.totalKnownOwned);
     for (const zone of zones) {
-      if (!subtractCounter(remainder, zone.knownCards)) return { zones, ambiguousLocationGroups: [] };
+      subtractCounterUpToAvailable(remainder, zone.knownCards);
     }
 
     if (mapTotal(remainder) !== anonymousTotal) return { zones, ambiguousLocationGroups: [] };

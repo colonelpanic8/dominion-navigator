@@ -72,6 +72,8 @@ Synthetic tracker break:
 
 That is probably wrong for Dominion deck ownership: the Zombie is controlled/in play for the turn, but was not gained and should not enter the player's owned deck. A correct fix probably needs to distinguish cards controlled in a player zone from cards actually owned by that player. A simple "never add unowned -> InPlayZone" rule would avoid Necromancer, but could undercount true gain-and-play effects such as `INNOVATION`, `CONTINUE`, `INVASION`, `MINING_ROAD`, `RUSH`, or `SAILOR`.
 
+Browser follow-up in game `#178442728`: after the hero played `Necromancer` and chose `Zombie Apprentice`, Dominion Online logged `c plays a Zombie Apprentice.` but did not emit a `TrashZone -> InPlayZone` card move for the Zombie. The Zombie stayed in the neutral trash zone in the client model, so the live overlay continued to show the hero owning only `7 Copper, 3 Estate, 1 Necromancer` and the hero `InPlayZone` containing only `Necromancer`. The synthetic regression still guards the tracker against equivalent client events from other play-from-unowned-source cards.
+
 ### Starting and Restarting Bot Games
 
 Observed working flow from the Dominion Online lobby:

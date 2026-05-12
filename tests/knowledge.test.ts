@@ -349,6 +349,52 @@ test("returning cards to the supply removes ownership before another player gain
   assert.equal(opponentDiscard?.knownCards.Copper, 1);
 });
 
+test("playing an unowned card from the trash does not add it to owned deck knowledge", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(1, "InPlayZone", ["Necromancer"]),
+        zone(2, "HandZone", []),
+        zone(3, "DrawZone", [], 1),
+        zone(4, "DiscardZone", [], 0)
+      ],
+      "game-1",
+      ["Estate", "Necromancer"]
+    )
+  );
+
+  tracker.applyMove(
+    moveWithNames(neutralSummaryZone(100, "TrashZone", ["Zombie Apprentice"]), summaryZone(1, "InPlayZone", ["Necromancer", "Zombie Apprentice"]), [
+      "Zombie Apprentice"
+    ])
+  );
+
+  const [knowledge] = tracker.summary().players;
+  const inPlay = knowledge?.zones.find((item) => item.zoneName === "InPlayZone");
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Estate: 1, Necromancer: 1 });
+  assert.deepEqual(inPlay?.knownCards, { Necromancer: 1, "Zombie Apprentice": 1 });
+  assert.deepEqual(draw?.knownCards, { Estate: 1 });
+  assert.equal(draw?.unknownCount, 0);
+  assert.deepEqual(knowledge?.unlocatedKnownCards, {});
+});
+
+test("gain then play from a player zone keeps the gained card owned", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "SetAsideZone", []), zone(2, "InPlayZone", [])]));
+
+  tracker.applyMove(moveWithNames(neutralSummaryZone(100, "SetAsideZone", ["Smithy"]), summaryZone(1, "SetAsideZone", ["Smithy"]), ["Smithy"]));
+  tracker.applyMove(moveWithNames(summaryZone(1, "SetAsideZone", ["Smithy"]), summaryZone(2, "InPlayZone", ["Smithy"]), ["Smithy"]));
+
+  const [knowledge] = tracker.summary().players;
+  const inPlay = knowledge?.zones.find((item) => item.zoneName === "InPlayZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Smithy: 1 });
+  assert.deepEqual(inPlay?.knownCards, { Smithy: 1 });
+});
+
 test("gaining a known card onto deck keeps before-move identity when Dominion anonymizes it", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
