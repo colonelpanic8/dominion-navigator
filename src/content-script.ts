@@ -312,6 +312,7 @@ async function loadPersistedState(): Promise<StoredNavigatorState | undefined> {
 function persistState(snapshot: NavigatorSnapshot): void {
   const localStorage = runtime.chrome?.storage?.local;
   if (!localStorage?.set) return;
+  if (!snapshotHasRestorableIdentity(snapshot)) return;
 
   const state: StoredNavigatorState = {
     version: 1,
@@ -335,8 +336,8 @@ function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean 
     return false;
   }
   if (!snapshotHasRestorableIdentity(snapshot)) return false;
-  restoredPersistedState = true;
   if (!storedStateMatchesSnapshot(persistedState, snapshot)) return false;
+  restoredPersistedState = true;
 
   tracker.restoreForSnapshot(persistedState.tracker, snapshot);
   recentMoves.splice(0, recentMoves.length, ...persistedState.recentMoves.slice(-30));
