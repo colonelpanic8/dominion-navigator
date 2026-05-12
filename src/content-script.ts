@@ -357,12 +357,19 @@ function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["h
   return a.name !== undefined && a.name === b.name;
 }
 
-function playerMatchesToken(player: NavigatorSnapshot["players"][number], token: string): boolean {
-  return player.name === token || Boolean(player.name?.startsWith(token));
+function samePlayer(a: ZoneSummary["owner"] | undefined, b: NavigatorSnapshot["players"][number] | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.index !== undefined && b.index !== undefined) return a.index === b.index;
+  return a.name !== undefined && a.name === b.name;
 }
 
-function ownerMatchesToken(owner: ZoneSummary["owner"] | undefined, token: string): boolean {
-  return owner?.name === token || Boolean(owner?.name?.startsWith(token));
+function playerForLogToken(token: string): NavigatorSnapshot["players"][number] | undefined {
+  const players = latestSnapshot?.players ?? [];
+  const exactMatches = players.filter((player) => player.name === token);
+  if (exactMatches.length === 1) return exactMatches[0];
+
+  const prefixMatches = players.filter((player) => player.name?.startsWith(token));
+  return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
 }
 
 function cardNameFromLogArticle(text: string): string {
@@ -387,13 +394,13 @@ function recordAnonymousTopdeck(move: CardMoveSummary): void {
   while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
 }
 
-function consumeRecentAnonymousTopdeck(playerToken: string): boolean {
+function consumeRecentAnonymousTopdeck(player: NavigatorSnapshot["players"][number]): boolean {
   const now = Date.now();
   while (recentAnonymousTopdecks.length > 0 && now - recentAnonymousTopdecks[0]!.capturedAtMs > 5000) {
     recentAnonymousTopdecks.shift();
   }
 
-  const index = recentAnonymousTopdecks.findIndex((item) => ownerMatchesToken(item.owner, playerToken));
+  const index = recentAnonymousTopdecks.findIndex((item) => samePlayer(item.owner, player));
   if (index === -1) return false;
   recentAnonymousTopdecks.splice(index, 1);
   return true;
@@ -404,9 +411,9 @@ function applyKnownCardInZoneFromLogText(text: string): boolean {
   if (!topdeck) return false;
   const [, playerToken, cardText] = topdeck;
   if (!playerToken || !cardText) return false;
-  if (!consumeRecentAnonymousTopdeck(playerToken)) return false;
-  const player = latestSnapshot?.players.find((item) => playerMatchesToken(item, playerToken));
+  const player = playerForLogToken(playerToken);
   if (!player) return false;
+  if (!consumeRecentAnonymousTopdeck(player)) return false;
   return tracker.markKnownCardInZone(player, "DrawZone", cardNameFromLogArticle(cardText));
 }
 
