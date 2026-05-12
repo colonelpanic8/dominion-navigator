@@ -73,6 +73,18 @@ function thirdPlayerSummaryZone(index: number, zoneName: string, topCards: strin
   };
 }
 
+function neutralSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
+  return {
+    index,
+    zoneName,
+    runtimeType: "Zone",
+    owner: { index: -1, isHero: false },
+    cardCount: 0,
+    stackCount: 0,
+    topCards
+  };
+}
+
 function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", startingDeck?: string[]): NavigatorSnapshot {
   return {
     kind: "snapshot",
@@ -306,6 +318,37 @@ test("opponent gains to discard do not enter hero discard", () => {
   assert.equal(heroDiscard, undefined);
   assert.equal(opponentDiscard?.knownCards.Silver, 1);
   assert.equal(opponentDiscard?.totalCount, 1);
+});
+
+test("gaining a known card onto deck keeps before-move identity when Dominion anonymizes it", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(0, "HandZone", ["Bureaucrat"]),
+      zone(1, "DrawZone", [], 0),
+      zone(2, "DiscardZone", [], 0)
+    ])
+  );
+
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(1).toISOString(),
+    phase: "after",
+    from: neutralSummaryZone(100, "SetAsideZone", ["Silver"]),
+    to: summaryZone(1, "DrawZone", ["Back"]),
+    cardIds: [20],
+    cards: ["Silver"],
+    cardIdsAfterMoving: [-1],
+    cardsAfterMoving: ["Anonymous"]
+  });
+
+  const [knowledge] = tracker.summary().players;
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.equal(knowledge?.totalKnownOwned.Silver, 1);
+  assert.equal(draw?.knownCards.Silver, 1);
+  assert.equal(draw?.unknownCount, 0);
+  assert.equal(draw?.totalCount, 1);
 });
 
 test("three player gains remain separated by player index", () => {
