@@ -186,10 +186,32 @@ The Vassal supply count dropped from 10 to 9. This is the first successful purch
 
 After setting animations to `None`, resigning, and restarting from the same table, game `#178429682` reached `Turn 1 - colonelpanic8` cleanly with no animation queue backlog. The visible game buttons were `Autoplay Treasures` and `End Buys`, confirming this is the preferred setup for future card-effect playthroughs.
 
+### Bandit Effect Check
+
+In game `#178429682`, the first automated playthrough bought Cellar, Bandit, and Bureaucrat, then drew Bandit on turn 4. Playing Bandit succeeded with a synthetic canvas event that included `offsetX` and `offsetY`.
+
+The Dominion log confirmed the relevant card-location behavior:
+
+```text
+c plays a Bandit.
+c gains a Gold.
+L reveals a Copper and a Smithy.
+L discards a Copper and a Smithy.
+```
+
+The probe event stream captured the important tracker edge case:
+
+- Bandit moved from `HandZone` to `InPlayZone`.
+- Gold moved from `SetAsideZone` to `DiscardZone`.
+- The opponent's Copper and Smithy moved from `DrawZone` to `RevealZone`.
+- The same Copper and Smithy moved from `RevealZone` to `DiscardZone`, but Dominion anonymized the Copper in `cardsAfterMoving`.
+
+This is covered by the tracker fallback that preserves before-move identities for player-owned moves when after-move identities are less specific. A regression test now covers this Bandit reveal-to-discard pattern.
+
 ### Current Testing Limitation
 
 The debug browser processes Dominion animations slowly unless the Dominion animation option is set to `None`. Forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
 
-Because of that, this session started custom-kingdom tests and successfully bought Vassal, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
+Because of that, this session started custom-kingdom tests and successfully exercised Bandit's reveal/gain/discard behavior, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
 
 Next useful step: stabilize turn entry in the Dominion client, then play through the custom kingdom and record tracker observations for each card effect that moves, reveals, gains, trashes, exiles, sets aside, or otherwise changes card-location knowledge.

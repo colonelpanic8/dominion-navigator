@@ -461,6 +461,41 @@ test("discarding visible hand cards keeps identities even when discard only reve
   assert.equal(discard?.totalCount, 3);
 });
 
+test("discarding revealed cards keeps before-move identities when Dominion anonymizes lower discard cards", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "RevealZone", ["Copper", "Smithy"], 0, opponent),
+      zone(11, "DiscardZone", [], 0, opponent)
+    ])
+  );
+
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(1).toISOString(),
+    phase: "after",
+    from: opponentSummaryZone(10, "RevealZone", ["Copper", "Smithy"]),
+    to: opponentSummaryZone(11, "DiscardZone", ["Smithy"]),
+    cardIds: [20, 21],
+    cards: ["Copper", "Smithy"],
+    cardIdsAfterMoving: [-1, 21],
+    cardsAfterMoving: ["Anonymous", "Smithy"]
+  });
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "RevealZone", [], 0, opponent),
+      zone(11, "DiscardZone", ["Smithy"], 0, opponent)
+    ])
+  );
+
+  const knowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.deepEqual(discard?.knownCards, { Copper: 1, Smithy: 1 });
+  assert.equal(discard?.unknownCount, 0);
+  assert.equal(discard?.totalCount, 2);
+});
+
 test("discard snapshots are ignored even when they are empty", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
