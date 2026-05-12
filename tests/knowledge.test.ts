@@ -235,6 +235,7 @@ test("initial standard starting deck seeds a fully known owned ledger", () => {
   assert.equal(opponentDraw?.unknownCount, 0);
   assert.equal(opponentDraw?.ambiguousCount, 5);
   assert.equal(opponentKnowledge?.unknownLocatedCount, 0);
+  assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, {});
   assert.deepEqual(opponentKnowledge?.ambiguousLocationGroups, [
     {
       zoneKeys: ["10:HandZone", "11:DrawZone"],

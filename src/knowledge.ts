@@ -549,6 +549,10 @@ export class DeckKnowledgeTracker {
       .filter((zone) => zone.totalCount > 0)
       .sort((a, b) => a.zoneName.localeCompare(b.zoneName) || a.zoneKey.localeCompare(b.zoneKey));
 
+    for (const group of derived.ambiguousLocationGroups) {
+      for (const [card, count] of Object.entries(group.knownCards)) increment(zoneKnownTotals, card, count);
+    }
+
     const unlocatedKnownCards = new Map<string, number>();
     for (const [card, count] of player.totalKnownOwned) {
       const unlocated = count - (zoneKnownTotals.get(card) ?? 0);
