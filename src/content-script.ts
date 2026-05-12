@@ -15,7 +15,7 @@ import {
   SerializedDeckKnowledgeTracker,
   ZoneKnowledge
 } from "./knowledge";
-import { parseReactionLog, parseRevealedHandLog } from "./log-parser";
+import { parseLogCardList, parseReactionLog, parseRevealedHandLog } from "./log-parser";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
@@ -377,10 +377,6 @@ function playerForLogToken(token: string): NavigatorSnapshot["players"][number] 
   return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
 }
 
-function cardNameFromLogArticle(text: string): string {
-  return text.replace(/^(?:a|an|the) /i, "").trim();
-}
-
 function isAnonymousTopdeckMove(move: CardMoveSummary): boolean {
   return (
     move.phase === "after" &&
@@ -419,7 +415,9 @@ function applyKnownCardInZoneFromLogText(text: string): boolean {
   const player = playerForLogToken(playerToken);
   if (!player) return false;
   if (!consumeRecentAnonymousTopdeck(player)) return false;
-  return tracker.markKnownCardInZone(player, "DrawZone", cardNameFromLogArticle(cardText));
+  const [cardName] = parseLogCardList(cardText, knownCardNamesForLogParsing());
+  if (!cardName) return false;
+  return tracker.markKnownCardInZone(player, "DrawZone", cardName);
 }
 
 function knownCardNamesForLogParsing(): string[] {
