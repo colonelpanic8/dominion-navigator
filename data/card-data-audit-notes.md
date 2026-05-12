@@ -130,6 +130,17 @@ root.$applyAsync();
 
 When replacing an existing fixed kingdom, call `kr.clearKingdom()` as its own CDP step and wait for the table to show no fixed kingdom cards before adding the replacement list. Combining clear and add in the same evaluation can race the server rule update and leave some of the old fixed cards in place.
 
+Verified follow-up: from the score screen after game `#178442728`, clicking `Edit Table` and then `Select Kingdom Cards` exposed both controllers above. Clearing the kingdom in one CDP evaluation, waiting for the table text to show no fixed kingdom code, and then adding a replacement list in a second evaluation successfully updated the visible kingdom code. Clicking `Ready` created game `#178444050`.
+
+If the new game reaches `Waiting for colonelpanic8` with no visible `Start Game` button, send the start confirmation directly:
+
+```js
+const serverMessenger = angular.element(document.body).injector().get("serverMessenger");
+serverMessenger.answerQuestion({ questionIndex: 0, list: [] });
+```
+
+In game `#178444050`, that advanced the log from setup to `c shuffles their deck.`, `c draws 3 Coppers and 2 Estates.`, and `Turn 1 - colonelpanic8`. If the old score/table pane remains visually stuck as `.score-page.ng-leave`, removing that stale leaving node from the DOM clears the browser view without affecting the running game.
+
 After this setup, the table kingdom code was:
 
 ```text
