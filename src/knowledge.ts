@@ -292,7 +292,12 @@ export class DeckKnowledgeTracker {
     return true;
   }
 
-  markKnownCardsInZone(playerSummary: PlayerSummary | undefined, zoneName: string, cardNames: string[]): boolean {
+  markKnownCardsInZone(
+    playerSummary: PlayerSummary | undefined,
+    zoneName: string,
+    cardNames: string[],
+    options: { idempotent?: boolean } = {}
+  ): boolean {
     const key = playerKey(playerSummary);
     if (!key) return false;
     const player = this.players.get(key);
@@ -301,15 +306,17 @@ export class DeckKnowledgeTracker {
     if (!zone) return false;
 
     const required = counterFromNames(cardNames);
+    const idempotent = options.idempotent ?? true;
     let changed = false;
     let alreadySatisfied = required.size > 0;
 
     for (const [cardName, requiredCount] of required) {
       const currentCount = zone.knownCards.get(cardName) ?? 0;
-      if (currentCount >= requiredCount) continue;
+      if (idempotent && currentCount >= requiredCount) continue;
+      const remainingRequired = idempotent ? requiredCount - currentCount : requiredCount;
       alreadySatisfied = false;
 
-      const revealCount = Math.min(requiredCount - currentCount, zone.unknownCount);
+      const revealCount = Math.min(remainingRequired, zone.unknownCount);
       if (revealCount <= 0) continue;
       zone.unknownCount -= revealCount;
       increment(zone.knownCards, cardName, revealCount);

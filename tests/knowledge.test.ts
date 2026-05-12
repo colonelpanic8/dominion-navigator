@@ -550,6 +550,25 @@ test("log-revealed multi-card topdeck converts anonymous draw cards into known c
   assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, {});
 });
 
+test("new topdeck logs reveal additional matching cards already known in draw", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "RevealZone", [], 2, opponent),
+      zone(11, "DrawZone", ["Copper"], 2, opponent)
+    ])
+  );
+
+  assert.equal(tracker.markKnownCardsInZone(opponent, "DrawZone", ["Copper", "Copper"], { idempotent: false }), true);
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const draw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.deepEqual(draw?.knownCards, { Copper: 3 });
+  assert.equal(draw?.unknownCount, 0);
+  assert.equal(draw?.totalCount, 3);
+});
+
 test("revealed hand log location updates are idempotent", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(

@@ -441,7 +441,7 @@ function applyKnownCardInZoneFromLogText(text: string): boolean {
   const cardNames = parseLogCardList(cardText, knownCardNamesForLogParsing());
   if (cardNames.length === 0) return false;
   if (!consumeRecentAnonymousTopdeck(player, cardNames.length)) return false;
-  return tracker.markKnownCardsInZone(player, "DrawZone", cardNames);
+  return tracker.markKnownCardsInZone(player, "DrawZone", cardNames, { idempotent: false });
 }
 
 function knownCardNamesForLogParsing(): string[] {
