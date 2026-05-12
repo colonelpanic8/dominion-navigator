@@ -121,9 +121,21 @@ shadow.innerHTML = `
       color: #dce2ea;
       margin-top: 3px;
     }
+    .line-stacked {
+      display: block;
+    }
     .line span:first-child {
       color: #aeb8c5;
       white-space: nowrap;
+    }
+    .line-stacked span:first-child {
+      display: block;
+      white-space: normal;
+    }
+    .line-stacked b {
+      display: block;
+      margin-top: 2px;
+      text-align: left;
     }
     .move {
       margin-top: 5px;
@@ -261,7 +273,7 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
   }
 
   for (const group of player.ambiguousLocationGroups) {
-    item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards)));
+    item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards), true));
   }
 
   const unlocatedText = formatCounter(player.unlocatedKnownCards, 4);
@@ -276,9 +288,9 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
   return item;
 }
 
-function renderKnowledgeLine(labelText: string, valueText: string): HTMLElement {
+function renderKnowledgeLine(labelText: string, valueText: string, stacked = false): HTMLElement {
   const line = document.createElement("div");
-  line.className = "line";
+  line.className = stacked ? "line line-stacked" : "line";
 
   const label = document.createElement("span");
   label.textContent = labelText;
