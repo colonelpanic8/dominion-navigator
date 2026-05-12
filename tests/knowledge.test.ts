@@ -527,6 +527,20 @@ test("trashing cards to a neutral trash zone does not create a fake player", () 
   assert.equal(heroKnowledge?.zones.find((item) => item.zoneName === "TrashZone"), undefined);
 });
 
+test("removing a revealed card from an unknown owned ledger consumes unknown ownership", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));
+
+  tracker.applyMove(moveWithNames(summaryZone(1, "HandZone", ["Back"]), neutralSummaryZone(100, "TrashZone", ["Estate"]), ["Estate"]));
+
+  const [knowledge] = tracker.summary().players;
+
+  assert.deepEqual(knowledge?.totalKnownOwned, {});
+  assert.equal(knowledge?.totalUnknownOwned, 0);
+  assert.equal(knowledge?.zones.find((item) => item.zoneName === "HandZone"), undefined);
+  assert.equal(knowledge?.zones.find((item) => item.zoneName === "TrashZone"), undefined);
+});
+
 test("restoring stale storage skips neutral pseudo-player entries", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.restore({

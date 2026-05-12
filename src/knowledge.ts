@@ -447,7 +447,13 @@ export class DeckKnowledgeTracker {
   }
 
   private removeFromOwnedLedger(player: MutablePlayerKnowledge, names: string[], count: number): void {
-    for (const name of names) decrement(player.totalKnownOwned, name);
+    for (const name of names) {
+      if ((player.totalKnownOwned.get(name) ?? 0) > 0) {
+        decrement(player.totalKnownOwned, name);
+      } else {
+        player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - 1);
+      }
+    }
     const unknownCount = Math.max(0, count - names.length);
     player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - unknownCount);
   }
