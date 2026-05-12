@@ -447,7 +447,7 @@ export class DeckKnowledgeTracker {
       for (const [card, count] of zone.knownCards) increment(player.totalKnownOwned, card, count);
       player.totalUnknownOwned += zone.unknownCount;
     }
-    player.confidence = player.totalUnknownOwned === 0 ? "observed" : "partial";
+    this.updateConfidence(player);
   }
 
   private reconcileKnownOwnedFromLocated(player: MutablePlayerKnowledge): void {
@@ -462,12 +462,13 @@ export class DeckKnowledgeTracker {
       player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
     }
 
-    player.confidence = player.totalUnknownOwned === 0 ? "observed" : "partial";
+    this.updateConfidence(player);
   }
 
   private addToOwnedLedger(player: MutablePlayerKnowledge, names: string[], count: number): void {
     for (const name of names) increment(player.totalKnownOwned, name);
     player.totalUnknownOwned += Math.max(0, count - names.length);
+    this.updateConfidence(player);
   }
 
   private removeFromOwnedLedger(player: MutablePlayerKnowledge, names: string[], count: number): void {
@@ -480,6 +481,11 @@ export class DeckKnowledgeTracker {
     }
     const unknownCount = Math.max(0, count - names.length);
     player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - unknownCount);
+    this.updateConfidence(player);
+  }
+
+  private updateConfidence(player: MutablePlayerKnowledge): void {
+    player.confidence = player.totalUnknownOwned === 0 ? "observed" : "partial";
   }
 
   private removeUnknownOrAnonymizeKnown(zone: MutableZoneKnowledge, count: number): void {

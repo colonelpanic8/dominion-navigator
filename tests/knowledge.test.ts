@@ -351,6 +351,20 @@ test("opponent gains to discard do not enter hero discard", () => {
   assert.equal(opponentDiscard?.totalCount, 1);
 });
 
+test("unknown gain updates confidence to partial", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "DiscardZone", [])]));
+
+  let [knowledge] = tracker.summary().players;
+  assert.equal(knowledge?.confidence, "observed");
+
+  tracker.applyMove(move(neutralSummaryZone(100, "SetAsideZone", []), summaryZone(1, "DiscardZone", ["Back"]), 1));
+
+  [knowledge] = tracker.summary().players;
+  assert.equal(knowledge?.confidence, "partial");
+  assert.equal(knowledge?.totalUnknownOwned, 1);
+});
+
 test("returning cards to the supply removes ownership before another player gains a copy", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
