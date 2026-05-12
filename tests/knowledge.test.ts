@@ -323,6 +323,38 @@ test("authoritative named move removes stale known location from another zone", 
   assert.deepEqual(knowledge?.unlocatedKnownCards, {});
 });
 
+test("authoritative named move preserves another known copy when owned ledger allows it", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: { Silver: 2 },
+        totalUnknownOwned: 0,
+        zones: [
+          { zoneKey: "1:DrawZone", zoneName: "DrawZone", knownCards: { Silver: 1 }, unknownCount: 0 },
+          { zoneKey: "2:HandZone", zoneName: "HandZone", knownCards: {}, unknownCount: 0 }
+        ]
+      }
+    ]
+  });
+
+  tracker.applyMove(moveWithNames(summaryZone(2, "HandZone", ["Silver"]), summaryZone(3, "InPlayZone", ["Silver"]), ["Silver"]));
+
+  const [knowledge] = tracker.summary().players;
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const inPlay = knowledge?.zones.find((item) => item.zoneName === "InPlayZone");
+
+  assert.deepEqual(draw?.knownCards, { Silver: 1 });
+  assert.deepEqual(inPlay?.knownCards, { Silver: 1 });
+  assert.deepEqual(knowledge?.totalKnownOwned, { Silver: 2 });
+});
+
 test("snapshot reveal converts unknown ownership to known ownership", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));
