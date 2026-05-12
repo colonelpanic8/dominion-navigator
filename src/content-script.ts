@@ -729,17 +729,16 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   const isReactionLog = Boolean(text && parseReactionLog(text));
   if (!text) return;
   if (!isTopdeckLog && !isRevealedHandLog && !isReactionLog) {
+    if (isPotentialKnowledgeLogLine(text)) {
+      deferUnresolvedLogLine(element, seen);
+      return;
+    }
     seen.add(element);
     return;
   }
 
   if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text) && !applyKnownReactionFromLogText(text)) {
-    const firstSeen = pendingLogLineFirstSeen.get(element) ?? Date.now();
-    pendingLogLineFirstSeen.set(element, firstSeen);
-    if (Date.now() - firstSeen > LOG_LINE_RETRY_MS) {
-      pendingLogLineFirstSeen.delete(element);
-      seen.add(element);
-    }
+    deferUnresolvedLogLine(element, seen);
     return;
   }
 
@@ -749,6 +748,19 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   renderKnowledge(summary);
   if (latestSnapshot) renderZones(summary, latestSnapshot);
   if (latestSnapshot) persistState(latestSnapshot);
+}
+
+function isPotentialKnowledgeLogLine(text: string): boolean {
+  return /(?:\btopdecks\b|\breveals their hand:|\breacts with\b)/.test(text);
+}
+
+function deferUnresolvedLogLine(element: Element, seen: WeakSet<Element>): void {
+  const firstSeen = pendingLogLineFirstSeen.get(element) ?? Date.now();
+  pendingLogLineFirstSeen.set(element, firstSeen);
+  if (Date.now() - firstSeen > LOG_LINE_RETRY_MS) {
+    pendingLogLineFirstSeen.delete(element);
+    seen.add(element);
+  }
 }
 
 function initializeLogHistoryBoundary(): void {
