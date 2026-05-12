@@ -15,6 +15,7 @@ import {
   SerializedDeckKnowledgeTracker,
   ZoneKnowledge
 } from "./knowledge";
+import { parseRevealedHandLog } from "./log-parser";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
@@ -421,6 +422,25 @@ function applyKnownCardInZoneFromLogText(text: string): boolean {
   return tracker.markKnownCardInZone(player, "DrawZone", cardNameFromLogArticle(cardText));
 }
 
+function knownCardNamesForLogParsing(): string[] {
+  const names = new Set<string>([...(latestSnapshot?.setupCards ?? []), ...(latestSnapshot?.startingDeck ?? [])]);
+  for (const player of tracker.summary().players) {
+    for (const cardName of Object.keys(player.totalKnownOwned)) names.add(cardName);
+    for (const zone of player.zones) for (const cardName of Object.keys(zone.knownCards)) names.add(cardName);
+  }
+  return [...names];
+}
+
+function applyKnownHandFromLogText(text: string): boolean {
+  const revealedHand = parseRevealedHandLog(text, knownCardNamesForLogParsing());
+  if (!revealedHand) return false;
+  const player = playerForLogToken(revealedHand.playerToken);
+  if (!player) return false;
+
+  for (const cardName of revealedHand.cards) tracker.markKnownCardInZone(player, "HandZone", cardName);
+  return true;
+}
+
 function playerDisplayName(player: PlayerDeckKnowledge["player"] | ZoneSummary["owner"] | undefined): string {
   return player?.name ?? (player?.index !== undefined ? `Player ${player.index}` : "unknown");
 }
@@ -675,12 +695,19 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   }
 
   const text = element.textContent?.replace(/\s+/g, " ").trim();
-  if (!text || !TOPDECK_LOG_PATTERN.test(text)) {
+  const isTopdeckLog = Boolean(text && TOPDECK_LOG_PATTERN.test(text));
+  const isRevealedHandLog = Boolean(text && parseRevealedHandLog(text));
+  if (!text || (!isTopdeckLog && !isRevealedHandLog)) {
     seen.add(element);
     return;
   }
 
-  if (!applyKnownCardInZoneFromLogText(text)) {
+  if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text)) {
+    if (!isTopdeckLog) {
+      seen.add(element);
+      return;
+    }
+
     const firstSeen = pendingTopdeckLogFirstSeen.get(element) ?? Date.now();
     pendingTopdeckLogFirstSeen.set(element, firstSeen);
     if (Date.now() - firstSeen > TOPDECK_LOG_RETRY_MS) {
