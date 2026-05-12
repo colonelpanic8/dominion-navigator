@@ -287,10 +287,7 @@ function gameFingerprint(game: RuntimeGame): string | undefined {
   if (!game.state) return undefined;
   return JSON.stringify({
     players: (game.state.players ?? []).map((player) => player.playerId ?? player.name ?? player.index),
-    setupCards: setupCardNames(game),
-    zoneIndexes: (game.state.zones ?? [])
-      .filter((zone): zone is RuntimeZone => Boolean(zone?.owner && zone.owner.index !== undefined && zone.owner.index >= 0))
-      .map((zone) => `${zone.owner?.index}:${zone.index}:${zone.zoneName}`)
+    setupCards: setupCardNames(game)
   });
 }
 
