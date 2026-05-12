@@ -588,6 +588,20 @@ test("new game instance resets ownership and zone knowledge even with the same p
   assert.equal(knowledge?.zones.some((item) => item.zoneKey === "1:DiscardZone"), false);
 });
 
+test("initial dropped-in snapshot includes visible discard knowledge", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "DiscardZone", ["Silver"], 2)], "game-1"));
+
+  const [knowledge] = tracker.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.equal(knowledge?.totalKnownOwned.Silver, 1);
+  assert.equal(knowledge?.totalUnknownOwned, 2);
+  assert.deepEqual(discard?.knownCards, { Silver: 1 });
+  assert.equal(discard?.unknownCount, 2);
+  assert.equal(discard?.totalCount, 3);
+});
+
 test("serialized knowledge can be restored across a probe game id change", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Copper"]), zone(2, "DiscardZone", [])], "game-1"));

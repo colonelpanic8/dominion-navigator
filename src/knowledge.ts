@@ -347,7 +347,7 @@ export class DeckKnowledgeTracker {
     this.players.clear();
     this.gameInstanceId = snapshot.gameInstanceId;
     for (const player of snapshot.players) this.ensurePlayer(player).confidence = "partial";
-    for (const zone of snapshot.playerZones) this.upsertZoneFromSnapshot(zone);
+    for (const zone of snapshot.playerZones) this.upsertZoneFromSnapshot(zone, { includeEventSourced: true });
     for (const player of this.players.values()) this.recomputeKnownOwnedFromZones(player);
     this.seedStartingDecks(snapshot);
     this.initialized = true;
@@ -370,9 +370,9 @@ export class DeckKnowledgeTracker {
     return created;
   }
 
-  private upsertZoneFromSnapshot(zone: ZoneDetail): void {
+  private upsertZoneFromSnapshot(zone: ZoneDetail, options: { includeEventSourced?: boolean } = {}): void {
     if (!zone.owner) return;
-    if (isEventSourcedZone(zone.zoneName)) return;
+    if (!options.includeEventSourced && isEventSourcedZone(zone.zoneName)) return;
 
     const player = this.ensurePlayer(zone.owner);
     const key = zoneKey(zone);
