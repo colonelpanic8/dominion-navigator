@@ -7,14 +7,45 @@ import {
   ZoneDetail,
   ZoneSummary
 } from "./messages";
-import { CardCounter, DeckKnowledgeTracker, KnowledgeSummary, PlayerDeckKnowledge, ZoneKnowledge } from "./knowledge";
+import {
+  CardCounter,
+  DeckKnowledgeTracker,
+  KnowledgeSummary,
+  PlayerDeckKnowledge,
+  SerializedDeckKnowledgeTracker,
+  ZoneKnowledge
+} from "./knowledge";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
     runtime?: {
       getURL?: (path: string) => string;
+      lastError?: { message?: string };
+    };
+    storage?: {
+      local?: {
+        get?: (keys: string | string[] | Record<string, unknown>, callback: (items: Record<string, unknown>) => void) => void;
+        set?: (items: Record<string, unknown>, callback?: () => void) => void;
+        remove?: (keys: string | string[], callback?: () => void) => void;
+      };
     };
   };
+};
+
+type SnapshotIdentity = {
+  href: string;
+  players: string[];
+  setupCards: string[];
+  startingDeck: string[];
+  turnNumber?: number;
+};
+
+type StoredNavigatorState = {
+  version: 1;
+  savedAt: string;
+  identity: SnapshotIdentity;
+  tracker: SerializedDeckKnowledgeTracker;
+  recentMoves: CardMoveSummary[];
 };
 
 const runtime = globalThis as RuntimeWithChrome;
@@ -22,6 +53,11 @@ const runtime = globalThis as RuntimeWithChrome;
 let latestSnapshot: NavigatorSnapshot | undefined;
 const recentMoves: CardMoveSummary[] = [];
 const tracker = new DeckKnowledgeTracker();
+let persistedState: StoredNavigatorState | undefined;
+let restoredPersistedState = false;
+
+const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v1:";
+const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 
 const root = document.createElement("section");
 root.id = "dominion-navigator-root";
@@ -187,6 +223,97 @@ function requestSnapshot(): void {
     type: "request-snapshot"
   };
   window.postMessage(command, window.location.origin);
+}
+
+function storageKey(): string {
+  return `${STORAGE_KEY_PREFIX}${window.location.href}`;
+}
+
+function snapshotIdentity(snapshot: NavigatorSnapshot): SnapshotIdentity {
+  return {
+    href: window.location.href,
+    players: snapshot.players
+      .map((player) => `${player.index ?? ""}:${player.name ?? ""}:${player.isHero ? "hero" : "other"}`)
+      .sort((a, b) => a.localeCompare(b)),
+    setupCards: [...(snapshot.setupCards ?? [])].sort((a, b) => a.localeCompare(b)),
+    startingDeck: [...(snapshot.startingDeck ?? [])].sort((a, b) => a.localeCompare(b)),
+    ...(snapshot.activeTurn?.turnNumber !== undefined ? { turnNumber: snapshot.activeTurn.turnNumber } : {})
+  };
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function isStoredNavigatorState(value: unknown): value is StoredNavigatorState {
+  if (!isObject(value)) return false;
+  return (
+    value.version === 1 &&
+    typeof value.savedAt === "string" &&
+    isObject(value.identity) &&
+    isObject(value.tracker) &&
+    value.tracker.version === 1 &&
+    Array.isArray(value.recentMoves)
+  );
+}
+
+function storedStateMatchesSnapshot(state: StoredNavigatorState, snapshot: NavigatorSnapshot): boolean {
+  const identity = snapshotIdentity(snapshot);
+  const savedAt = Date.parse(state.savedAt);
+  if (!Number.isFinite(savedAt) || Date.now() - savedAt > MAX_RESTORE_AGE_MS) return false;
+  if (state.identity.href !== identity.href) return false;
+  if (!arraysEqual(state.identity.players, identity.players)) return false;
+  if (!arraysEqual(state.identity.setupCards, identity.setupCards)) return false;
+  if (!arraysEqual(state.identity.startingDeck, identity.startingDeck)) return false;
+  if (state.identity.turnNumber !== undefined && identity.turnNumber !== undefined && identity.turnNumber < state.identity.turnNumber) return false;
+  return true;
+}
+
+async function loadPersistedState(): Promise<StoredNavigatorState | undefined> {
+  const localStorage = runtime.chrome?.storage?.local;
+  if (!localStorage?.get) return undefined;
+
+  return new Promise((resolve) => {
+    localStorage.get!(storageKey(), (items) => {
+      if (runtime.chrome?.runtime?.lastError) {
+        resolve(undefined);
+        return;
+      }
+
+      const stored = items[storageKey()];
+      resolve(isStoredNavigatorState(stored) ? stored : undefined);
+    });
+  });
+}
+
+function persistState(snapshot: NavigatorSnapshot): void {
+  const localStorage = runtime.chrome?.storage?.local;
+  if (!localStorage?.set) return;
+
+  const state: StoredNavigatorState = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    identity: snapshotIdentity(snapshot),
+    tracker: tracker.serialize(),
+    recentMoves: recentMoves.slice(-30)
+  };
+
+  localStorage.set({ [storageKey()]: state });
+}
+
+function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean {
+  if (restoredPersistedState) return false;
+  restoredPersistedState = true;
+  if (!persistedState || !storedStateMatchesSnapshot(persistedState, snapshot)) return false;
+
+  tracker.restoreForSnapshot(persistedState.tracker, snapshot);
+  recentMoves.splice(0, recentMoves.length, ...persistedState.recentMoves.slice(-30));
+  renderMoves();
+  return true;
 }
 
 function zoneCards(zone: ZoneDetail): string {
@@ -360,13 +487,14 @@ function renderZoneItem(zoneName: string, count: number, cardsText: string): HTM
 
 function renderSnapshot(snapshot: NavigatorSnapshot): void {
   latestSnapshot = snapshot;
-  tracker.applySnapshot(snapshot);
+  if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
   const summary = tracker.summary();
   const heroName = snapshot.hero?.name ?? "unknown player";
   const turn = snapshot.activeTurn?.turnNumber === undefined ? "unknown turn" : `turn ${snapshot.activeTurn.turnNumber}`;
   metaElement.textContent = `${heroName} · ${turn} · ${snapshot.gameRunning ? "running" : "not running"}`;
   renderKnowledge(summary);
   renderZones(summary, snapshot);
+  persistState(snapshot);
 }
 
 function renderMoves(): void {
@@ -409,6 +537,7 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
     renderMoves();
     renderKnowledge(summary);
     if (latestSnapshot) renderZones(summary, latestSnapshot);
+    if (latestSnapshot) persistState(latestSnapshot);
   }
 });
 
@@ -425,7 +554,10 @@ function injectProbe(): void {
   (document.head || document.documentElement).appendChild(script);
 }
 
-injectProbe();
-setInterval(() => {
-  if (!latestSnapshot?.gameRunning) requestSnapshot();
-}, 2000);
+void (async () => {
+  persistedState = await loadPersistedState();
+  injectProbe();
+  setInterval(() => {
+    if (!latestSnapshot?.gameRunning) requestSnapshot();
+  }, 2000);
+})();

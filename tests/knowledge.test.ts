@@ -370,6 +370,23 @@ test("new game instance resets ownership and zone knowledge even with the same p
   assert.equal(knowledge?.zones.some((item) => item.zoneKey === "1:DiscardZone"), false);
 });
 
+test("serialized knowledge can be restored across a probe game id change", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Copper"]), zone(2, "DiscardZone", [])], "game-1"));
+  tracker.applyMove(moveWithNames(summaryZone(1, "HandZone", ["Copper"]), summaryZone(2, "DiscardZone", ["Copper"]), ["Copper"]));
+
+  const restored = new DeckKnowledgeTracker();
+  restored.restoreForSnapshot(tracker.serialize(), snapshot([zone(1, "HandZone", []), zone(2, "DiscardZone", ["Copper"])], "game-2"));
+
+  const [knowledge] = restored.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+  const hand = knowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Copper: 1 });
+  assert.deepEqual(discard?.knownCards, { Copper: 1 });
+  assert.equal(hand, undefined);
+});
+
 test("partial discard snapshots do not erase deck moved to discard by Messenger", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(

@@ -33,6 +33,29 @@ export type KnowledgeSummary = {
   players: PlayerDeckKnowledge[];
 };
 
+export type SerializedZoneKnowledge = {
+  zoneKey: string;
+  zoneName: string;
+  knownCards: CardCounter;
+  unknownCount: number;
+};
+
+export type SerializedPlayerKnowledge = {
+  key: string;
+  player: PlayerSummary;
+  confidence: "partial" | "observed";
+  totalKnownOwned: CardCounter;
+  totalUnknownOwned: number;
+  zones: SerializedZoneKnowledge[];
+};
+
+export type SerializedDeckKnowledgeTracker = {
+  version: 1;
+  initialized: boolean;
+  gameInstanceId?: string;
+  players: SerializedPlayerKnowledge[];
+};
+
 type MutablePlayerKnowledge = {
   player: PlayerSummary;
   confidence: "partial" | "observed";
@@ -100,6 +123,14 @@ function counterFromNames(names: string[]): Map<string, number> {
   const counter = new Map<string, number>();
   for (const name of names) increment(counter, name);
   return counter;
+}
+
+function counterFromObject(counter: CardCounter): Map<string, number> {
+  const restored = new Map<string, number>();
+  for (const [card, count] of Object.entries(counter)) {
+    if (count > 0) restored.set(card, count);
+  }
+  return restored;
 }
 
 function zoneKey(zone: Pick<ZoneSummary, "index" | "zoneName">): string {
@@ -221,6 +252,60 @@ export class DeckKnowledgeTracker {
     return {
       players: [...this.players.values()].map((player) => this.summarizePlayer(player))
     };
+  }
+
+  serialize(): SerializedDeckKnowledgeTracker {
+    return {
+      version: 1,
+      initialized: this.initialized,
+      ...(this.gameInstanceId ? { gameInstanceId: this.gameInstanceId } : {}),
+      players: [...this.players.entries()].map(([key, player]) => ({
+        key,
+        player: player.player,
+        confidence: player.confidence,
+        totalKnownOwned: toObject(player.totalKnownOwned),
+        totalUnknownOwned: player.totalUnknownOwned,
+        zones: [...player.zones.values()].map((zone) => ({
+          zoneKey: zone.zoneKey,
+          zoneName: zone.zoneName,
+          knownCards: toObject(zone.knownCards),
+          unknownCount: zone.unknownCount
+        }))
+      }))
+    };
+  }
+
+  restore(serialized: SerializedDeckKnowledgeTracker): void {
+    this.players.clear();
+    this.initialized = serialized.initialized;
+    this.gameInstanceId = serialized.gameInstanceId;
+
+    for (const player of serialized.players) {
+      this.players.set(player.key, {
+        player: player.player,
+        confidence: player.confidence,
+        totalKnownOwned: counterFromObject(player.totalKnownOwned),
+        totalUnknownOwned: player.totalUnknownOwned,
+        zones: new Map(
+          player.zones.map((zone) => [
+            zone.zoneKey,
+            {
+              zoneKey: zone.zoneKey,
+              zoneName: zone.zoneName,
+              knownCards: counterFromObject(zone.knownCards),
+              unknownCount: zone.unknownCount
+            }
+          ])
+        )
+      });
+    }
+  }
+
+  restoreForSnapshot(serialized: SerializedDeckKnowledgeTracker, snapshot: NavigatorSnapshot): void {
+    this.restore(serialized);
+    this.initialized = true;
+    this.gameInstanceId = snapshot.gameInstanceId;
+    this.applySnapshot(snapshot);
   }
 
   private initializeFromSnapshot(snapshot: NavigatorSnapshot): void {
