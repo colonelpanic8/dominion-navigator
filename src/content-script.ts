@@ -727,7 +727,8 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   const isTopdeckLog = Boolean(text && TOPDECK_LOG_PATTERN.test(text));
   const isRevealedHandLog = Boolean(text && parseRevealedHandLog(text));
   const isReactionLog = Boolean(text && parseReactionLog(text));
-  if (!text || (!isTopdeckLog && !isRevealedHandLog && !isReactionLog)) {
+  if (!text) return;
+  if (!isTopdeckLog && !isRevealedHandLog && !isReactionLog) {
     seen.add(element);
     return;
   }
@@ -767,18 +768,33 @@ function installLogObserver(): void {
     for (const element of Array.from(document.querySelectorAll(".log-line"))) processLogLine(element, seenLogLines);
   };
 
+  const containingLogLine = (node: Node): Element | undefined => {
+    if (node instanceof Element) {
+      if (node.classList.contains("log-line")) return node;
+      return node.closest(".log-line") ?? undefined;
+    }
+    return node.parentNode instanceof Element ? node.parentNode.closest(".log-line") ?? undefined : undefined;
+  };
+
   for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      if (mutation.type === "characterData") {
+        const logLine = containingLogLine(mutation.target);
+        if (logLine) processLogLine(logLine, seenLogLines);
+      }
+
       for (const node of Array.from(mutation.addedNodes)) {
-        if (!(node instanceof Element)) continue;
-        if (node.classList.contains("log-line")) processLogLine(node, seenLogLines);
-        for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seenLogLines);
+        const logLine = containingLogLine(node);
+        if (logLine) processLogLine(logLine, seenLogLines);
+        if (node instanceof Element) {
+          for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seenLogLines);
+        }
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { characterData: true, childList: true, subtree: true });
   window.setInterval(scan, 1000);
 }
 
