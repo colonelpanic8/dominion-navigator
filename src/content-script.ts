@@ -157,9 +157,21 @@ shadow.innerHTML = `
       color: #dce2ea;
       margin-top: 3px;
     }
+    .line-stacked {
+      display: block;
+    }
     .line span:first-child {
       color: #aeb8c5;
       white-space: nowrap;
+    }
+    .line-stacked span:first-child {
+      display: block;
+      white-space: normal;
+    }
+    .line-stacked b {
+      display: block;
+      margin-top: 2px;
+      text-align: left;
     }
     .move {
       margin-top: 5px;
@@ -316,7 +328,8 @@ function zoneCards(zone: ZoneDetail): string {
 function trackedZoneCards(zone: ZoneKnowledge): string {
   const knownText = formatCounter(zone.knownCards);
   const unknownText = zone.unknownCount > 0 ? `${zone.unknownCount} unknown` : "";
-  return [knownText, unknownText].filter(Boolean).join("; ") || "empty";
+  const ambiguousText = zone.ambiguousCount > 0 ? `${zone.ambiguousCount} location-ambiguous` : "";
+  return [knownText, ambiguousText, unknownText].filter(Boolean).join("; ") || "empty";
 }
 
 function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["hero"]): boolean {
@@ -386,6 +399,10 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
     item.append(renderKnowledgeLine(zone.zoneName, trackedZoneCards(zone)));
   }
 
+  for (const group of player.ambiguousLocationGroups) {
+    item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards), true));
+  }
+
   const unlocatedText = formatCounter(player.unlocatedKnownCards, 4);
   if (unlocatedText) {
     item.append(renderKnowledgeLine("Known, unlocated", unlocatedText));
@@ -398,9 +415,9 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
   return item;
 }
 
-function renderKnowledgeLine(labelText: string, valueText: string): HTMLElement {
+function renderKnowledgeLine(labelText: string, valueText: string, stacked = false): HTMLElement {
   const line = document.createElement("div");
-  line.className = "line";
+  line.className = stacked ? "line line-stacked" : "line";
 
   const label = document.createElement("span");
   label.textContent = labelText;
