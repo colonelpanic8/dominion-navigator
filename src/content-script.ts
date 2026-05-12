@@ -288,6 +288,10 @@ function storedStateMatchesSnapshot(state: StoredNavigatorState, snapshot: Navig
   return true;
 }
 
+function snapshotHasRestorableIdentity(snapshot: NavigatorSnapshot): boolean {
+  return currentGameNumber() !== undefined && snapshot.players.length > 0 && (snapshot.setupCards?.length ?? 0) > 0;
+}
+
 async function loadPersistedState(): Promise<StoredNavigatorState | undefined> {
   const localStorage = runtime.chrome?.storage?.local;
   if (!localStorage?.get) return undefined;
@@ -330,7 +334,7 @@ function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean 
     restoredPersistedState = true;
     return false;
   }
-  if (currentGameNumber() === undefined) return false;
+  if (!snapshotHasRestorableIdentity(snapshot)) return false;
   restoredPersistedState = true;
   if (!storedStateMatchesSnapshot(persistedState, snapshot)) return false;
 
