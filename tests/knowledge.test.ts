@@ -602,6 +602,23 @@ test("initial dropped-in snapshot includes visible discard knowledge", () => {
   assert.equal(discard?.totalCount, 3);
 });
 
+test("snapshot reconciliation prunes stale non-discard zones but keeps event-sourced discard", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "HandZone", ["Copper"]),
+      zone(2, "DiscardZone", ["Estate"])
+    ])
+  );
+
+  tracker.applySnapshot(snapshot([zone(2, "DiscardZone", ["Estate"])]));
+
+  const [knowledge] = tracker.summary().players;
+
+  assert.equal(knowledge?.zones.find((item) => item.zoneName === "HandZone"), undefined);
+  assert.deepEqual(knowledge?.zones.find((item) => item.zoneName === "DiscardZone")?.knownCards, { Estate: 1 });
+});
+
 test("serialized knowledge can be restored across a probe game id change", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Copper"]), zone(2, "DiscardZone", [])], "game-1"));

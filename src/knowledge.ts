@@ -229,6 +229,7 @@ export class DeckKnowledgeTracker {
     for (const zone of snapshot.playerZones) {
       this.upsertZoneFromSnapshot(zone);
     }
+    this.pruneZonesMissingFromSnapshot(snapshot);
   }
 
   applyMove(move: CardMoveSummary): void {
@@ -401,6 +402,16 @@ export class DeckKnowledgeTracker {
     for (const [card, count] of zoneKnowledge.knownCards) {
       const currentKnownOwned = player.totalKnownOwned.get(card) ?? 0;
       if (count > currentKnownOwned) player.totalKnownOwned.set(card, count);
+    }
+  }
+
+  private pruneZonesMissingFromSnapshot(snapshot: NavigatorSnapshot): void {
+    const visibleZoneKeys = new Set(snapshot.playerZones.map(zoneKey));
+    for (const player of this.players.values()) {
+      for (const [key, zone] of player.zones) {
+        if (visibleZoneKeys.has(key) || isEventSourcedZone(zone.zoneName)) continue;
+        player.zones.delete(key);
+      }
     }
   }
 
