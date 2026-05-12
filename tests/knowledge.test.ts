@@ -474,6 +474,19 @@ test("log-revealed topdeck converts one anonymous draw card into a known card", 
   ]);
 });
 
+test("marking the final unknown card updates confidence to observed", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "DrawZone", [], 1)]));
+
+  assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Silver"), true);
+
+  const [knowledge] = tracker.summary().players;
+
+  assert.equal(knowledge?.confidence, "observed");
+  assert.deepEqual(knowledge?.totalKnownOwned, { Silver: 1 });
+  assert.equal(knowledge?.totalUnknownOwned, 0);
+});
+
 test("gaining a known card onto deck keeps before-move identity when Dominion anonymizes it", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(

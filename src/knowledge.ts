@@ -279,6 +279,7 @@ export class DeckKnowledgeTracker {
       increment(player.totalKnownOwned, cardName, delta);
       player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
     }
+    this.updateConfidence(player);
 
     return true;
   }
