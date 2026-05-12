@@ -53,12 +53,17 @@ const runtime = globalThis as RuntimeWithChrome;
 let latestSnapshot: NavigatorSnapshot | undefined;
 const recentMoves: CardMoveSummary[] = [];
 const recentAnonymousTopdecks: Array<{ owner?: ZoneSummary["owner"]; capturedAtMs: number }> = [];
+const seenLogLines = new WeakSet<Element>();
+let pendingTopdeckLogFirstSeen = new WeakMap<Element, number>();
 const tracker = new DeckKnowledgeTracker();
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
+let logObserverReady = false;
 
 const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v1:";
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
+const TOPDECK_LOG_RETRY_MS = 5000;
+const TOPDECK_LOG_PATTERN = /^(.+?) topdecks (.+?)\.$/;
 
 const root = document.createElement("section");
 root.id = "dominion-navigator-root";
@@ -382,7 +387,7 @@ function consumeRecentAnonymousTopdeck(playerToken: string): boolean {
 }
 
 function applyKnownCardInZoneFromLogText(text: string): boolean {
-  const topdeck = text.match(/^(.+?) topdecks (.+?)\.$/);
+  const topdeck = text.match(TOPDECK_LOG_PATTERN);
   if (!topdeck) return false;
   const [, playerToken, cardText] = topdeck;
   if (!playerToken || !cardText) return false;
@@ -581,6 +586,7 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
 
   if (event.data.type === "snapshot") {
     renderSnapshot(event.data.payload);
+    initializeLogHistoryBoundary();
     return;
   }
 
@@ -600,29 +606,55 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
 
 function processLogLine(element: Element, seen: WeakSet<Element>): void {
   if (seen.has(element)) return;
-  seen.add(element);
+  if (!logObserverReady) {
+    seen.add(element);
+    return;
+  }
+
   const text = element.textContent?.replace(/\s+/g, " ").trim();
-  if (!text || !applyKnownCardInZoneFromLogText(text)) return;
+  if (!text || !TOPDECK_LOG_PATTERN.test(text)) {
+    seen.add(element);
+    return;
+  }
+
+  if (!applyKnownCardInZoneFromLogText(text)) {
+    const firstSeen = pendingTopdeckLogFirstSeen.get(element) ?? Date.now();
+    pendingTopdeckLogFirstSeen.set(element, firstSeen);
+    if (Date.now() - firstSeen > TOPDECK_LOG_RETRY_MS) {
+      pendingTopdeckLogFirstSeen.delete(element);
+      seen.add(element);
+    }
+    return;
+  }
+
+  pendingTopdeckLogFirstSeen.delete(element);
+  seen.add(element);
   const summary = tracker.summary();
   renderKnowledge(summary);
   if (latestSnapshot) renderZones(summary, latestSnapshot);
   if (latestSnapshot) persistState(latestSnapshot);
 }
 
+function initializeLogHistoryBoundary(): void {
+  if (logObserverReady) return;
+  for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
+  pendingTopdeckLogFirstSeen = new WeakMap<Element, number>();
+  logObserverReady = true;
+}
+
 function installLogObserver(): void {
-  const seen = new WeakSet<Element>();
   const scan = (): void => {
-    for (const element of Array.from(document.querySelectorAll(".log-line"))) processLogLine(element, seen);
+    for (const element of Array.from(document.querySelectorAll(".log-line"))) processLogLine(element, seenLogLines);
   };
 
-  for (const element of Array.from(document.querySelectorAll(".log-line"))) seen.add(element);
+  for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of Array.from(mutation.addedNodes)) {
         if (!(node instanceof Element)) continue;
-        if (node.classList.contains("log-line")) processLogLine(node, seen);
-        for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seen);
+        if (node.classList.contains("log-line")) processLogLine(node, seenLogLines);
+        for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seenLogLines);
       }
     }
   });
