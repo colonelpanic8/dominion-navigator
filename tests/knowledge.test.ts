@@ -303,6 +303,26 @@ test("same-owner revealed move converts unknown ownership to known ownership", (
   assert.deepEqual(hand?.knownCards, { Silver: 1 });
 });
 
+test("authoritative named move removes stale known location from another zone", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "DrawZone", ["Silver"]),
+      zone(2, "HandZone", [])
+    ])
+  );
+
+  tracker.applyMove(moveWithNames(summaryZone(2, "HandZone", ["Silver"]), summaryZone(3, "InPlayZone", ["Silver"]), ["Silver"]));
+
+  const [knowledge] = tracker.summary().players;
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const inPlay = knowledge?.zones.find((item) => item.zoneName === "InPlayZone");
+
+  assert.equal(draw, undefined);
+  assert.deepEqual(inPlay?.knownCards, { Silver: 1 });
+  assert.deepEqual(knowledge?.unlocatedKnownCards, {});
+});
+
 test("snapshot reveal converts unknown ownership to known ownership", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));

@@ -430,7 +430,9 @@ export class DeckKnowledgeTracker {
 
   private removeFromZone(player: MutablePlayerKnowledge, zone: ZoneSummary, names: string[], count: number): void {
     const from = this.getOrCreateZone(player, zone);
-    for (const name of names) this.removeNamedCardFromZone(from, name);
+    for (const name of names) {
+      if (!this.removeNamedCardFromZone(from, name)) this.removeNamedCardFromAnyZone(player, name);
+    }
     const unknownToRemove = Math.max(0, count - names.length);
     this.removeUnknownOrAnonymizeKnown(from, unknownToRemove);
   }
@@ -503,14 +505,25 @@ export class DeckKnowledgeTracker {
     }
   }
 
-  private removeNamedCardFromZone(zone: MutableZoneKnowledge, name: string): void {
+  private removeNamedCardFromZone(zone: MutableZoneKnowledge, name: string): boolean {
     if ((zone.knownCards.get(name) ?? 0) > 0) {
       decrement(zone.knownCards, name);
-      return;
+      return true;
     }
 
     if (zone.unknownCount > 0) {
       zone.unknownCount -= 1;
+      return true;
+    }
+
+    return false;
+  }
+
+  private removeNamedCardFromAnyZone(player: MutablePlayerKnowledge, name: string): void {
+    for (const zone of player.zones.values()) {
+      if ((zone.knownCards.get(name) ?? 0) <= 0) continue;
+      decrement(zone.knownCards, name);
+      return;
     }
   }
 
