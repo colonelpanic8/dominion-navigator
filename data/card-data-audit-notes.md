@@ -127,10 +127,36 @@ Lord Rattington: 7 Copper, 3 Estate
 
 That confirms the current tracker can attach to a custom-kingdom bot game and recover the initial known-card model for both players.
 
+### Second Custom-Kingdom Attempt
+
+To check whether the first loading problem was caused by the mixed/deprecated/Alchemy kingdom, a Base-only kingdom was also started from cards marked `must-check`:
+
+- Artisan
+- Bandit
+- Bureaucrat
+- Harbinger
+- Mine
+- Sentry
+- Vassal
+
+Simple Base fillers were added to make a ten-card kingdom:
+
+- Cellar
+- Village
+- Smithy
+
+The table kingdom code was:
+
+```text
+cellar, harbinger, vassal, village, bureaucrat, smithy, bandit, mine, sentry, artisan
+```
+
+Game `#178428799` started with that supply, but after a 30-second wait it still reported `Loading game...`, `Your starting cards:`, and no visible active turn controls. The `Force end turn` control existed in the DOM but had zero size.
+
 ### Current Testing Limitation
 
-The Dominion client did not expose active turn controls after this custom game reached the `Your starting cards:` state. After waiting, the DOM still reported game `#178428383` with `Your starting cards:` and the game tab strip, but the screenshot showed the client in a loading state and the visible `Force end turn` control had zero size.
+The Dominion client did not expose active turn controls after either custom game reached the `Your starting cards:` state. The DOM reported the game id, supply, starting decks, and game tab strip, while screenshots showed the client in a loading state.
 
-Because of that, this session started the first `must-check` custom-kingdom test but did not complete per-card playthrough verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, or Bureaucrat.
+Because of that, this session started custom-kingdom tests for the listed `must-check` cards but did not complete per-card playthrough verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
 
 Next useful step: stabilize turn entry in the Dominion client, then play through the custom kingdom and record tracker observations for each card effect that moves, reveals, gains, trashes, exiles, sets aside, or otherwise changes card-location knowledge.
