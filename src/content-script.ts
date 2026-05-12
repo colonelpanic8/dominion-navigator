@@ -529,21 +529,60 @@ function renderZones(summary: KnowledgeSummary, snapshot: NavigatorSnapshot): vo
   const heroKnowledge = summary.players.find((player) => playerMatches(player.player, snapshot.hero));
   const trackedByKey = new Map((heroKnowledge?.zones ?? []).map((zone) => [zone.zoneKey, zone]));
   const renderedKeys = new Set<string>();
-  const zoneItems: HTMLElement[] = [];
+  const zoneRows: ZoneRenderRow[] = [];
 
   for (const rawZone of snapshot.heroZones) {
     const key = `${rawZone.index}:${rawZone.zoneName}`;
     const trackedZone = trackedByKey.get(key);
     renderedKeys.add(key);
-    zoneItems.push(renderZoneItem(zoneDisplayName(rawZone), trackedZone?.totalCount ?? (rawZoneIsEventSourced(rawZone) ? 0 : rawZone.cardCount), trackedZone ? trackedZoneCards(trackedZone) : rawZoneIsEventSourced(rawZone) ? "empty" : zoneCards(rawZone)));
+    appendZoneRenderRow(zoneRows, {
+      zoneName: zoneDisplayName(rawZone),
+      count: trackedZone?.totalCount ?? (rawZoneIsEventSourced(rawZone) ? 0 : rawZone.cardCount),
+      cardsText: trackedZone ? trackedZoneCards(trackedZone) : rawZoneIsEventSourced(rawZone) ? "empty" : zoneCards(rawZone)
+    });
   }
 
   for (const trackedZone of heroKnowledge?.zones ?? []) {
     if (renderedKeys.has(trackedZone.zoneKey)) continue;
-    zoneItems.push(renderZoneItem(trackedZone.zoneName, trackedZone.totalCount, trackedZoneCards(trackedZone)));
+    appendZoneRenderRow(zoneRows, {
+      zoneName: trackedZone.zoneName,
+      count: trackedZone.totalCount,
+      cardsText: trackedZoneCards(trackedZone)
+    });
   }
 
-  zonesElement.replaceChildren(...zoneItems);
+  zonesElement.replaceChildren(...zoneRows.map((row) => renderZoneItem(row.zoneName, row.count, row.cardsText)));
+}
+
+type ZoneRenderRow = {
+  zoneName: string;
+  count: number;
+  cardsText: string;
+};
+
+function appendZoneRenderRow(rows: ZoneRenderRow[], next: ZoneRenderRow): void {
+  const existingIndex = rows.findIndex((row) => row.zoneName === next.zoneName);
+  if (existingIndex === -1) {
+    rows.push(next);
+    return;
+  }
+
+  const existing = rows[existingIndex]!;
+  const existingEmpty = isEmptyZoneRenderRow(existing);
+  const nextEmpty = isEmptyZoneRenderRow(next);
+
+  if (nextEmpty) return;
+  if (existingEmpty) {
+    rows[existingIndex] = next;
+    return;
+  }
+
+  const duplicateCount = rows.filter((row) => row.zoneName === next.zoneName || row.zoneName.startsWith(`${next.zoneName} #`)).length + 1;
+  rows.push({ ...next, zoneName: `${next.zoneName} #${duplicateCount}` });
+}
+
+function isEmptyZoneRenderRow(row: ZoneRenderRow): boolean {
+  return row.count === 0 && row.cardsText === "empty";
 }
 
 function renderZoneItem(zoneName: string, count: number, cardsText: string): HTMLElement {
