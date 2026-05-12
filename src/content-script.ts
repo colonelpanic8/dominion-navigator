@@ -325,7 +325,11 @@ function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean 
     restoredPersistedState = true;
     return false;
   }
-  if (persistedState.identity.gameNumber !== undefined && currentGameNumber() === undefined) return false;
+  if (persistedState.identity.gameNumber === undefined) {
+    restoredPersistedState = true;
+    return false;
+  }
+  if (currentGameNumber() === undefined) return false;
   restoredPersistedState = true;
   if (!storedStateMatchesSnapshot(persistedState, snapshot)) return false;
 
