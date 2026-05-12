@@ -91,6 +91,8 @@ for (const name of [
 root.$applyAsync();
 ```
 
+When replacing an existing fixed kingdom, call `kr.clearKingdom()` as its own CDP step and wait for the table to show no fixed kingdom cards before adding the replacement list. Combining clear and add in the same evaluation can race the server rule update and leave some of the old fixed cards in place.
+
 After this setup, the table kingdom code was:
 
 ```text
@@ -252,10 +254,38 @@ The probe event stream captured the important tracker sequence:
 
 A regression test now covers the Sentry reveal-to-topdeck pattern and the anonymous draw-pile snapshot that follows it.
 
+### Ambassador Effect Check
+
+After clearing the previous fixed kingdom and waiting for the table update, game `#178441615` started with this kingdom:
+
+```text
+cellar, moat, ambassador, village, workshop, militia, smithy, festival, laboratory, market
+```
+
+Lord Rattington bought Ambassador on turn 1, and the hero bought Ambassador on turn 1 with a five-Copper opening hand. The hero drew and played Ambassador on turn 4.
+
+The Dominion log confirmed the relevant card-location behavior:
+
+```text
+c plays an Ambassador.
+c reveals a Copper.
+c returns 2 Coppers to the Copper pile.
+L gains a Copper.
+```
+
+The probe event stream captured the important tracker sequence:
+
+- Ambassador moved from the hero `HandZone` to `InPlayZone`.
+- The selected Copper briefly moved from hero `HandZone` to a hero `SkippableRevealZone`, then back to `HandZone` before the return-count choice.
+- Two Coppers moved from the hero `HandZone` to the Copper `SetAsideZone`, representing cards returned to the supply and removed from hero ownership.
+- One Copper moved from the Copper `SetAsideZone` to Lord Rattington's `DiscardZone`, representing the attack gain for the single opponent.
+
+A regression test now covers the ownership split where returned cards leave the hero's owned deck while the opponent gains a separate known copy.
+
 ### Current Testing Limitation
 
 The debug browser processes Dominion animations slowly unless the Dominion animation option is set to `None`. Forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
 
-Because of that, this session started custom-kingdom tests and successfully exercised Bandit's reveal/gain/discard behavior, Bureaucrat's gain-to-deck/topdeck behavior, and Sentry's reveal/topdeck behavior, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine, or Vassal.
+Because of that, this session started custom-kingdom tests and successfully exercised Bandit's reveal/gain/discard behavior, Bureaucrat's gain-to-deck/topdeck behavior, Sentry's reveal/topdeck behavior, and Ambassador's reveal/return/gain behavior, but did not complete per-card effect verification for Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine, or Vassal.
 
 Next useful step: stabilize turn entry in the Dominion client, then play through the custom kingdom and record tracker observations for each card effect that moves, reveals, gains, trashes, exiles, sets aside, or otherwise changes card-location knowledge.

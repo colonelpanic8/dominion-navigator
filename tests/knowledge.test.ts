@@ -320,6 +320,35 @@ test("opponent gains to discard do not enter hero discard", () => {
   assert.equal(opponentDiscard?.totalCount, 1);
 });
 
+test("returning cards to the supply removes ownership before another player gains a copy", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "HandZone", ["Copper", "Copper", "Copper", "Copper"]),
+      zone(2, "InPlayZone", ["Ambassador"]),
+      zone(11, "DiscardZone", [], 0, opponent)
+    ])
+  );
+
+  tracker.applyMove(
+    moveWithNames(summaryZone(1, "HandZone", ["Copper"]), neutralSummaryZone(100, "SetAsideZone", ["Copper"]), [
+      "Copper",
+      "Copper"
+    ])
+  );
+  tracker.applyMove(moveWithNames(neutralSummaryZone(100, "SetAsideZone", ["Copper"]), opponentSummaryZone(11, "DiscardZone", ["Copper"]), ["Copper"]));
+
+  const heroKnowledge = tracker.summary().players.find((item) => item.player.index === player.index);
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const heroHand = heroKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+  const opponentDiscard = opponentKnowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.equal(heroKnowledge?.totalKnownOwned.Copper, 2);
+  assert.equal(heroHand?.knownCards.Copper, 2);
+  assert.equal(opponentKnowledge?.totalKnownOwned.Copper, 1);
+  assert.equal(opponentDiscard?.knownCards.Copper, 1);
+});
+
 test("gaining a known card onto deck keeps before-move identity when Dominion anonymizes it", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
