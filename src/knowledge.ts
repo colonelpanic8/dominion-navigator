@@ -132,6 +132,14 @@ function counterFromNames(names: string[]): Map<string, number> {
   return counter;
 }
 
+function countersEqual(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [card, count] of a) {
+    if (b.get(card) !== count) return false;
+  }
+  return true;
+}
+
 function counterFromObject(counter: CardCounter): Map<string, number> {
   const restored = new Map<string, number>();
   for (const [card, count] of Object.entries(counter)) {
@@ -312,6 +320,26 @@ export class DeckKnowledgeTracker {
 
     this.reconcileKnownOwnedFromLocated(player);
     this.updateConfidence(player);
+    return true;
+  }
+
+  markExactKnownCardsInZone(playerSummary: PlayerSummary | undefined, zoneName: string, cardNames: string[]): boolean {
+    const key = playerKey(playerSummary);
+    if (!key) return false;
+    const player = this.players.get(key);
+    if (!player) return false;
+    const zone = [...player.zones.values()].find((item) => item.zoneName === zoneName);
+    if (!zone) return false;
+
+    const nextKnownCards = counterFromNames(cardNames);
+    const alreadySatisfied = zone.unknownCount === 0 && countersEqual(zone.knownCards, nextKnownCards);
+    zone.knownCards = nextKnownCards;
+    zone.unknownCount = 0;
+
+    if (!alreadySatisfied) {
+      this.reconcileKnownOwnedFromLocated(player);
+      this.updateConfidence(player);
+    }
     return true;
   }
 

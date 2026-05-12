@@ -437,7 +437,7 @@ function applyKnownHandFromLogText(text: string): boolean {
   const player = playerForLogToken(revealedHand.playerToken);
   if (!player) return false;
 
-  return tracker.markKnownCardsInZone(player, "HandZone", revealedHand.cards);
+  return tracker.markExactKnownCardsInZone(player, "HandZone", revealedHand.cards);
 }
 
 function applyKnownReactionFromLogText(text: string): boolean {
