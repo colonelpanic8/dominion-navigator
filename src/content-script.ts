@@ -52,6 +52,7 @@ const runtime = globalThis as RuntimeWithChrome;
 
 let latestSnapshot: NavigatorSnapshot | undefined;
 const recentMoves: CardMoveSummary[] = [];
+const recentAnonymousTopdecks: Array<{ owner?: ZoneSummary["owner"]; capturedAtMs: number }> = [];
 const tracker = new DeckKnowledgeTracker();
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
@@ -338,6 +339,59 @@ function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["h
   return a.name !== undefined && a.name === b.name;
 }
 
+function playerMatchesToken(player: NavigatorSnapshot["players"][number], token: string): boolean {
+  return player.name === token || Boolean(player.name?.startsWith(token));
+}
+
+function ownerMatchesToken(owner: ZoneSummary["owner"] | undefined, token: string): boolean {
+  return owner?.name === token || Boolean(owner?.name?.startsWith(token));
+}
+
+function cardNameFromLogArticle(text: string): string {
+  return text.replace(/^(?:a|an|the) /i, "").trim();
+}
+
+function isAnonymousTopdeckMove(move: CardMoveSummary): boolean {
+  return (
+    move.phase === "after" &&
+    move.to?.zoneName === "DrawZone" &&
+    move.to.owner?.index !== undefined &&
+    move.to.owner.index >= 0 &&
+    move.cardIdsAfterMoving.length === 1 &&
+    move.cardIdsAfterMoving.every((id) => id === -1) &&
+    move.cardsAfterMoving.every((card) => card === "Anonymous")
+  );
+}
+
+function recordAnonymousTopdeck(move: CardMoveSummary): void {
+  if (!isAnonymousTopdeckMove(move)) return;
+  recentAnonymousTopdecks.push({ owner: move.to?.owner, capturedAtMs: Date.now() });
+  while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
+}
+
+function consumeRecentAnonymousTopdeck(playerToken: string): boolean {
+  const now = Date.now();
+  while (recentAnonymousTopdecks.length > 0 && now - recentAnonymousTopdecks[0]!.capturedAtMs > 5000) {
+    recentAnonymousTopdecks.shift();
+  }
+
+  const index = recentAnonymousTopdecks.findIndex((item) => ownerMatchesToken(item.owner, playerToken));
+  if (index === -1) return false;
+  recentAnonymousTopdecks.splice(index, 1);
+  return true;
+}
+
+function applyKnownCardInZoneFromLogText(text: string): boolean {
+  const topdeck = text.match(/^(.+?) topdecks (.+?)\.$/);
+  if (!topdeck) return false;
+  const [, playerToken, cardText] = topdeck;
+  if (!playerToken || !cardText) return false;
+  if (!consumeRecentAnonymousTopdeck(playerToken)) return false;
+  const player = latestSnapshot?.players.find((item) => playerMatchesToken(item, playerToken));
+  if (!player) return false;
+  return tracker.markKnownCardInZone(player, "DrawZone", cardNameFromLogArticle(cardText));
+}
+
 function playerDisplayName(player: PlayerDeckKnowledge["player"] | ZoneSummary["owner"] | undefined): string {
   return player?.name ?? (player?.index !== undefined ? `Player ${player.index}` : "unknown");
 }
@@ -523,6 +577,7 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
     metaElement.textContent = event.data.payload.reason ?? "Probe is not ready.";
     return;
   }
+  if (event.data.type === "status") return;
 
   if (event.data.type === "snapshot") {
     renderSnapshot(event.data.payload);
@@ -533,13 +588,47 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
     recentMoves.push(event.data.payload);
     while (recentMoves.length > 30) recentMoves.shift();
     tracker.applyMove(event.data.payload);
+    recordAnonymousTopdeck(event.data.payload);
     const summary = tracker.summary();
     renderMoves();
     renderKnowledge(summary);
     if (latestSnapshot) renderZones(summary, latestSnapshot);
     if (latestSnapshot) persistState(latestSnapshot);
+    return;
   }
 });
+
+function processLogLine(element: Element, seen: WeakSet<Element>): void {
+  if (seen.has(element)) return;
+  seen.add(element);
+  const text = element.textContent?.replace(/\s+/g, " ").trim();
+  if (!text || !applyKnownCardInZoneFromLogText(text)) return;
+  const summary = tracker.summary();
+  renderKnowledge(summary);
+  if (latestSnapshot) renderZones(summary, latestSnapshot);
+  if (latestSnapshot) persistState(latestSnapshot);
+}
+
+function installLogObserver(): void {
+  const seen = new WeakSet<Element>();
+  const scan = (): void => {
+    for (const element of Array.from(document.querySelectorAll(".log-line"))) processLogLine(element, seen);
+  };
+
+  for (const element of Array.from(document.querySelectorAll(".log-line"))) seen.add(element);
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of Array.from(mutation.addedNodes)) {
+        if (!(node instanceof Element)) continue;
+        if (node.classList.contains("log-line")) processLogLine(node, seen);
+        for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seen);
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.setInterval(scan, 1000);
+}
 
 function injectProbe(): void {
   const src = runtime.chrome?.runtime?.getURL?.("page-probe.js");
@@ -556,6 +645,7 @@ function injectProbe(): void {
 
 void (async () => {
   persistedState = await loadPersistedState();
+  installLogObserver();
   injectProbe();
   setInterval(() => {
     if (!latestSnapshot?.gameRunning) requestSnapshot();

@@ -259,6 +259,28 @@ export class DeckKnowledgeTracker {
     }
   }
 
+  markKnownCardInZone(playerSummary: PlayerSummary | undefined, zoneName: string, cardName: string): boolean {
+    const key = playerKey(playerSummary);
+    if (!key) return false;
+    const player = this.players.get(key);
+    if (!player) return false;
+    const zone = [...player.zones.values()].find((item) => item.zoneName === zoneName);
+    if (!zone || zone.unknownCount <= 0) return false;
+
+    zone.unknownCount -= 1;
+    increment(zone.knownCards, cardName);
+
+    const locatedKnown = [...player.zones.values()].reduce((total, item) => total + (item.knownCards.get(cardName) ?? 0), 0);
+    const knownOwned = player.totalKnownOwned.get(cardName) ?? 0;
+    if (locatedKnown > knownOwned) {
+      const delta = locatedKnown - knownOwned;
+      increment(player.totalKnownOwned, cardName, delta);
+      player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
+    }
+
+    return true;
+  }
+
   summary(): KnowledgeSummary {
     return {
       players: [...this.players.values()].map((player) => this.summarizePlayer(player))

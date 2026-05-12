@@ -396,6 +396,40 @@ test("gain then play from a player zone keeps the gained card owned", () => {
   assert.deepEqual(inPlay?.knownCards, { Smithy: 1 });
 });
 
+test("log-revealed topdeck converts one anonymous draw card into a known card", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(10, "HandZone", [], 5, opponent),
+        zone(11, "DrawZone", [], 5, opponent)
+      ],
+      "game-1",
+      ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Estate", "Estate", "Estate"]
+    )
+  );
+
+  tracker.applyMove(move(opponentSummaryZone(10, "HandZone", ["Back"]), opponentSummaryZone(11, "DrawZone", ["Back"]), 1));
+  assert.equal(tracker.markKnownCardInZone(opponent, "DrawZone", "Estate"), true);
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const draw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const hand = opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(draw?.knownCards, { Estate: 1 });
+  assert.equal(draw?.ambiguousCount, 5);
+  assert.equal(hand?.ambiguousCount, 4);
+  assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, {});
+  assert.deepEqual(opponentKnowledge?.ambiguousLocationGroups, [
+    {
+      zoneKeys: ["10:HandZone", "11:DrawZone"],
+      zoneNames: ["HandZone", "DrawZone"],
+      knownCards: { Copper: 7, Estate: 2 },
+      totalCount: 9
+    }
+  ]);
+});
+
 test("gaining a known card onto deck keeps before-move identity when Dominion anonymizes it", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
