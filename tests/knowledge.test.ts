@@ -7,6 +7,16 @@ const player = { index: 0, name: "Player", isHero: true };
 const opponent = { index: 1, name: "Opponent", isHero: false };
 const thirdPlayer = { index: 2, name: "Third", isHero: false };
 
+function startingDeck(setupCards?: string[]): string[] {
+  const deck = Array.from({ length: 7 }, () => "Copper");
+  if (setupCards?.some((card) => card !== "Copper" && card !== "Estate")) {
+    deck.push(...setupCards.filter((card) => card !== "Copper"));
+  } else {
+    deck.push("Estate", "Estate", "Estate");
+  }
+  return deck;
+}
+
 function zone(index: number, zoneName: string, cardNames: string[], unknownCount = 0, owner = player): ZoneDetail {
   return {
     index,
@@ -80,6 +90,7 @@ function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", setupCar
     gameRunning: true,
     capturedAt: new Date(0).toISOString(),
     ...(setupCards ? { setupCards } : {}),
+    startingDeck: startingDeck(setupCards),
     players: [player, opponent, thirdPlayer],
     hero: player,
     heroZones: playerZones,
@@ -320,6 +331,23 @@ test("new game instance resets ownership and zone knowledge even with the same p
   [knowledge] = tracker.summary().players;
   assert.deepEqual(knowledge?.totalKnownOwned, { Estate: 1 });
   assert.equal(knowledge?.zones.some((item) => item.zoneKey === "1:DiscardZone"), false);
+});
+
+test("serialized knowledge can be restored across a probe game id change", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Copper"]), zone(2, "DiscardZone", [])], "game-1"));
+  tracker.applyMove(moveWithNames(summaryZone(1, "HandZone", ["Copper"]), summaryZone(2, "DiscardZone", ["Copper"]), ["Copper"]));
+
+  const restored = new DeckKnowledgeTracker();
+  restored.restoreForSnapshot(tracker.serialize(), snapshot([zone(1, "HandZone", []), zone(2, "DiscardZone", ["Copper"])], "game-2"));
+
+  const [knowledge] = restored.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+  const hand = knowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Copper: 1 });
+  assert.deepEqual(discard?.knownCards, { Copper: 1 });
+  assert.equal(hand, undefined);
 });
 
 test("partial discard snapshots do not erase deck moved to discard by Messenger", () => {
