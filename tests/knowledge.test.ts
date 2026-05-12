@@ -526,6 +526,30 @@ test("log-revealed topdeck converts one anonymous draw card into a known card", 
   ]);
 });
 
+test("log-revealed multi-card topdeck converts anonymous draw cards into known cards", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(10, "RevealZone", [], 2, opponent),
+        zone(11, "DrawZone", [], 5, opponent)
+      ],
+      "game-1",
+      ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Silver", "Estate", "Estate", "Estate"]
+    )
+  );
+
+  tracker.applyMove(move(opponentSummaryZone(10, "RevealZone", ["Back"]), opponentSummaryZone(11, "DrawZone", ["Back"]), 2));
+  assert.equal(tracker.markKnownCardsInZone(opponent, "DrawZone", ["Copper", "Silver"]), true);
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const draw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.deepEqual(draw?.knownCards, { Copper: 1, Silver: 1 });
+  assert.equal(draw?.totalCount, 7);
+  assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, {});
+});
+
 test("revealed hand log location updates are idempotent", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
