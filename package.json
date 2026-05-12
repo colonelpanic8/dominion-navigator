@@ -1,0 +1,21 @@
+{
+  "name": "dominion-navigator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension prototype for tracking card locations on dominion.games.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test --import tsx tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "launch:chrome": "node scripts/launch-debug-chrome.mjs",
+    "reload:extension": "node scripts/reload-extension.mjs",
+    "dev": "node scripts/dev.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

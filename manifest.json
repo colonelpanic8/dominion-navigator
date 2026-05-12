@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Dominion Navigator",
+  "version": "0.1.0",
+  "description": "Tracks visible Dominion Online card locations from the in-page game model.",
+  "content_scripts": [
+    {
+      "matches": ["https://dominion.games/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-probe.js"],
+      "matches": ["https://dominion.games/*"]
+    }
+  ]
+}
