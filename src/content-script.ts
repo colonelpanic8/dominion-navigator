@@ -380,9 +380,12 @@ function playerForLogToken(token: string): NavigatorSnapshot["players"][number] 
 function isAnonymousTopdeckMove(move: CardMoveSummary): boolean {
   return (
     move.phase === "after" &&
+    move.from?.owner?.index !== undefined &&
+    move.from.owner.index >= 0 &&
     move.to?.zoneName === "DrawZone" &&
     move.to.owner?.index !== undefined &&
     move.to.owner.index >= 0 &&
+    samePlayer(move.from.owner, move.to.owner) &&
     move.cardIdsAfterMoving.length > 0 &&
     move.cardIdsAfterMoving.every((id) => id === -1) &&
     move.cardsAfterMoving.every((card) => card === "Anonymous")
