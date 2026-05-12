@@ -34,6 +34,7 @@ type RuntimeWithChrome = typeof globalThis & {
 
 type SnapshotIdentity = {
   href: string;
+  gameNumber?: string;
   players: string[];
   setupCards: string[];
   startingDeck: string[];
@@ -235,9 +236,15 @@ function storageKey(): string {
   return `${STORAGE_KEY_PREFIX}${window.location.href}`;
 }
 
+function currentGameNumber(): string | undefined {
+  return document.body?.innerText.match(/Game #(\d+)/)?.[1];
+}
+
 function snapshotIdentity(snapshot: NavigatorSnapshot): SnapshotIdentity {
+  const gameNumber = currentGameNumber();
   return {
     href: window.location.href,
+    ...(gameNumber ? { gameNumber } : {}),
     players: snapshot.players
       .map((player) => `${player.index ?? ""}:${player.name ?? ""}:${player.isHero ? "hero" : "other"}`)
       .sort((a, b) => a.localeCompare(b)),
@@ -272,6 +279,7 @@ function storedStateMatchesSnapshot(state: StoredNavigatorState, snapshot: Navig
   const savedAt = Date.parse(state.savedAt);
   if (!Number.isFinite(savedAt) || Date.now() - savedAt > MAX_RESTORE_AGE_MS) return false;
   if (state.identity.href !== identity.href) return false;
+  if (state.identity.gameNumber !== identity.gameNumber) return false;
   if (!arraysEqual(state.identity.players, identity.players)) return false;
   if (!arraysEqual(state.identity.setupCards, identity.setupCards)) return false;
   if (!arraysEqual(state.identity.startingDeck, identity.startingDeck)) return false;
@@ -313,8 +321,13 @@ function persistState(snapshot: NavigatorSnapshot): void {
 
 function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean {
   if (restoredPersistedState) return false;
+  if (!persistedState) {
+    restoredPersistedState = true;
+    return false;
+  }
+  if (persistedState.identity.gameNumber !== undefined && currentGameNumber() === undefined) return false;
   restoredPersistedState = true;
-  if (!persistedState || !storedStateMatchesSnapshot(persistedState, snapshot)) return false;
+  if (!storedStateMatchesSnapshot(persistedState, snapshot)) return false;
 
   tracker.restoreForSnapshot(persistedState.tracker, snapshot);
   recentMoves.splice(0, recentMoves.length, ...persistedState.recentMoves.slice(-30));
