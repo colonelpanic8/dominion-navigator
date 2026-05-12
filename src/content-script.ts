@@ -56,7 +56,7 @@ let latestSnapshot: NavigatorSnapshot | undefined;
 const recentMoves: CardMoveSummary[] = [];
 const recentAnonymousTopdecks: Array<{ owner?: ZoneSummary["owner"]; count: number; capturedAtMs: number }> = [];
 const seenLogLines = new WeakSet<Element>();
-let pendingTopdeckLogFirstSeen = new WeakMap<Element, number>();
+let pendingLogLineFirstSeen = new WeakMap<Element, number>();
 const tracker = new DeckKnowledgeTracker();
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
@@ -64,7 +64,7 @@ let logObserverReady = false;
 
 const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v1:";
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
-const TOPDECK_LOG_RETRY_MS = 5000;
+const LOG_LINE_RETRY_MS = 5000;
 const TOPDECK_LOG_PATTERN = /^(.+?) topdecks (.+?)\.$/;
 
 const root = document.createElement("section");
@@ -734,21 +734,16 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   }
 
   if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text) && !applyKnownReactionFromLogText(text)) {
-    if (!isTopdeckLog) {
-      seen.add(element);
-      return;
-    }
-
-    const firstSeen = pendingTopdeckLogFirstSeen.get(element) ?? Date.now();
-    pendingTopdeckLogFirstSeen.set(element, firstSeen);
-    if (Date.now() - firstSeen > TOPDECK_LOG_RETRY_MS) {
-      pendingTopdeckLogFirstSeen.delete(element);
+    const firstSeen = pendingLogLineFirstSeen.get(element) ?? Date.now();
+    pendingLogLineFirstSeen.set(element, firstSeen);
+    if (Date.now() - firstSeen > LOG_LINE_RETRY_MS) {
+      pendingLogLineFirstSeen.delete(element);
       seen.add(element);
     }
     return;
   }
 
-  pendingTopdeckLogFirstSeen.delete(element);
+  pendingLogLineFirstSeen.delete(element);
   seen.add(element);
   const summary = tracker.summary();
   renderKnowledge(summary);
@@ -759,7 +754,7 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
 function initializeLogHistoryBoundary(): void {
   if (logObserverReady) return;
   for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
-  pendingTopdeckLogFirstSeen = new WeakMap<Element, number>();
+  pendingLogLineFirstSeen = new WeakMap<Element, number>();
   logObserverReady = true;
 }
 
