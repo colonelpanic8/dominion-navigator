@@ -40,6 +40,7 @@ type RuntimeCardStack = {
 
 type RuntimePlayer = {
   index?: number;
+  playerId?: number;
   name?: string;
   isHero?: boolean;
 };
@@ -109,6 +110,8 @@ type ProbeState = {
   game?: RuntimeGame;
   gameInstanceId: string;
   gameInstanceSerial: number;
+  gameFingerprint: string | undefined;
+  lastTurnNumber: number | undefined;
   events: Array<CardMoveSummary | NavigatorSnapshot>;
   requestSnapshot: () => void;
 };
@@ -280,6 +283,17 @@ function makeSnapshot(game: RuntimeGame): NavigatorSnapshot {
   };
 }
 
+function gameFingerprint(game: RuntimeGame): string | undefined {
+  if (!game.state) return undefined;
+  return JSON.stringify({
+    players: (game.state.players ?? []).map((player) => player.playerId ?? player.name ?? player.index),
+    setupCards: setupCardNames(game),
+    zoneIndexes: (game.state.zones ?? [])
+      .filter((zone): zone is RuntimeZone => Boolean(zone?.owner && zone.owner.index !== undefined && zone.owner.index >= 0))
+      .map((zone) => `${zone.owner?.index}:${zone.index}:${zone.zoneName}`)
+  });
+}
+
 function makeMoveSummary(game: RuntimeGame, move: RuntimeCardMove, phase: "before" | "after"): CardMoveSummary {
   const cardIds = move.cardIds ?? [];
   const cardIdsAfterMoving = move.cardIdsAfterMoving ?? [];
@@ -314,13 +328,33 @@ function emitSnapshot(): void {
   post({ source: MESSAGE_SOURCE, type: "snapshot", payload: snapshot });
 }
 
-function startNewGameInstance(game: RuntimeGame): void {
+function startNewGameInstance(game: RuntimeGame, fingerprint?: string): void {
   const probe = win.__dominionNavigator;
   if (!probe) return;
   probe.game = game;
+  probe.gameFingerprint = fingerprint ?? gameFingerprint(game);
+  probe.lastTurnNumber = game.state?.activeTurn?.turnNumber;
   probe.gameInstanceSerial += 1;
   probe.gameInstanceId = `game-${probe.gameInstanceSerial}-${Date.now()}`;
   probe.events = [];
+}
+
+function updateGameInstance(game: RuntimeGame): void {
+  const probe = win.__dominionNavigator;
+  if (!probe) return;
+
+  const fingerprint = gameFingerprint(game);
+  const turnNumber = game.state?.activeTurn?.turnNumber;
+  const isDifferentGame = Boolean(probe.gameFingerprint && fingerprint && probe.gameFingerprint !== fingerprint);
+  const turnMovedBackwards = probe.lastTurnNumber !== undefined && turnNumber !== undefined && turnNumber < probe.lastTurnNumber;
+
+  if (isDifferentGame || turnMovedBackwards) {
+    startNewGameInstance(game, fingerprint);
+  } else {
+    probe.game = game;
+    probe.gameFingerprint = fingerprint ?? probe.gameFingerprint;
+    probe.lastTurnNumber = turnNumber ?? probe.lastTurnNumber;
+  }
 }
 
 function installGameLifecycleHook(game: RuntimeGame): void {
@@ -328,9 +362,9 @@ function installGameLifecycleHook(game: RuntimeGame): void {
   if (!readState || Reflect.get(readState, "__dominionNavigatorPatched")) return;
 
   const patched = function patchedReadState(this: RuntimeGame, isReconnect: boolean, reader: unknown): unknown {
-    startNewGameInstance(this);
     const result = readState.call(this, isReconnect, reader);
     window.setTimeout(() => {
+      updateGameInstance(this);
       installCardMoveHook(this);
       emitSnapshot();
     }, 0);
@@ -375,10 +409,16 @@ function install(): void {
     installed: true,
     gameInstanceId: `game-0-${Date.now()}`,
     gameInstanceSerial: 0,
+    gameFingerprint: undefined,
+    lastTurnNumber: undefined,
     events: [],
     requestSnapshot: emitSnapshot
   };
   if (game) win.__dominionNavigator.game = game;
+  if (game?.state) {
+    win.__dominionNavigator.gameFingerprint = gameFingerprint(game);
+    win.__dominionNavigator.lastTurnNumber = game.state.activeTurn?.turnNumber;
+  }
 
   if (!game?.state) {
     status(false, "Dominion game service is not ready yet.");

@@ -189,7 +189,8 @@ function zoneCards(zone: ZoneDetail): string {
 function trackedZoneCards(zone: ZoneKnowledge): string {
   const knownText = formatCounter(zone.knownCards);
   const unknownText = zone.unknownCount > 0 ? `${zone.unknownCount} unknown` : "";
-  return [knownText, unknownText].filter(Boolean).join("; ") || "empty";
+  const ambiguousText = zone.ambiguousCount > 0 ? `${zone.ambiguousCount} location-ambiguous` : "";
+  return [knownText, ambiguousText, unknownText].filter(Boolean).join("; ") || "empty";
 }
 
 function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["hero"]): boolean {
@@ -257,6 +258,10 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
 
   for (const zone of prioritizedZones(player.zones)) {
     item.append(renderKnowledgeLine(zone.zoneName, trackedZoneCards(zone)));
+  }
+
+  for (const group of player.ambiguousLocationGroups) {
+    item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards)));
   }
 
   const unlocatedText = formatCounter(player.unlocatedKnownCards, 4);

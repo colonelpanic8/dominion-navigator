@@ -7,6 +7,14 @@ export type ZoneKnowledge = {
   zoneName: string;
   knownCards: CardCounter;
   unknownCount: number;
+  ambiguousCount: number;
+  totalCount: number;
+};
+
+export type AmbiguousLocationGroup = {
+  zoneKeys: string[];
+  zoneNames: string[];
+  knownCards: CardCounter;
   totalCount: number;
 };
 
@@ -16,6 +24,7 @@ export type PlayerDeckKnowledge = {
   totalKnownOwned: CardCounter;
   totalUnknownOwned: number;
   zones: ZoneKnowledge[];
+  ambiguousLocationGroups: AmbiguousLocationGroup[];
   unlocatedKnownCards: CardCounter;
   unknownLocatedCount: number;
 };
@@ -44,6 +53,12 @@ type DerivedZoneKnowledge = {
   zoneName: string;
   knownCards: Map<string, number>;
   unknownCount: number;
+  ambiguousCount: number;
+};
+
+type DerivedKnowledge = {
+  zones: DerivedZoneKnowledge[];
+  ambiguousLocationGroups: AmbiguousLocationGroup[];
 };
 
 function increment(counter: Map<string, number>, cardName: string, amount = 1): void {
@@ -277,13 +292,8 @@ export class DeckKnowledgeTracker {
 
   private removeFromZone(player: MutablePlayerKnowledge, zone: ZoneSummary, names: string[], count: number): void {
     const from = this.getOrCreateZone(player, zone);
-    if (names.length === count) {
-      for (const name of names) decrement(from.knownCards, name);
-      return;
-    }
-
-    const unknownToRemove = count - names.length;
-    for (const name of names) decrement(from.knownCards, name);
+    for (const name of names) this.removeNamedCardFromZone(from, name);
+    const unknownToRemove = Math.max(0, count - names.length);
     this.removeUnknownOrAnonymizeKnown(from, unknownToRemove);
   }
 
@@ -328,6 +338,17 @@ export class DeckKnowledgeTracker {
     }
   }
 
+  private removeNamedCardFromZone(zone: MutableZoneKnowledge, name: string): void {
+    if ((zone.knownCards.get(name) ?? 0) > 0) {
+      decrement(zone.knownCards, name);
+      return;
+    }
+
+    if (zone.unknownCount > 0) {
+      zone.unknownCount -= 1;
+    }
+  }
+
   private seedStartingDecks(snapshot: NavigatorSnapshot): void {
     if (!snapshot.startingDeck) return;
     const startingDeck = counterFromNames(snapshot.startingDeck);
@@ -356,49 +377,68 @@ export class DeckKnowledgeTracker {
     return subtractCounter(remainder, locatedKnown);
   }
 
-  private deriveZonesForSummary(player: MutablePlayerKnowledge): DerivedZoneKnowledge[] {
+  private deriveZonesForSummary(player: MutablePlayerKnowledge): DerivedKnowledge {
     const zones = [...player.zones.values()].map((zone) => ({
       zoneKey: zone.zoneKey,
       zoneName: zone.zoneName,
       knownCards: cloneCounter(zone.knownCards),
-      unknownCount: zone.unknownCount
+      unknownCount: zone.unknownCount,
+      ambiguousCount: 0
     }));
 
-    if (player.totalUnknownOwned > 0) return zones;
+    if (player.totalUnknownOwned > 0) return { zones, ambiguousLocationGroups: [] };
 
-    const drawZones = zones.filter((zone) => zone.zoneName === "DrawZone");
-    if (drawZones.length !== 1) return zones;
+    const zonesWithAnonymousCards = zones.filter((zone) => zone.unknownCount > 0);
+    if (zonesWithAnonymousCards.length === 0) return { zones, ambiguousLocationGroups: [] };
 
-    const drawZone = drawZones[0]!;
-    if (drawZone.unknownCount === 0) return zones;
-    if (zones.some((zone) => zone.zoneName !== "DrawZone" && zone.unknownCount > 0)) return zones;
+    const anonymousTotal = zonesWithAnonymousCards.reduce((total, zone) => total + zone.unknownCount, 0);
 
     const remainder = cloneCounter(player.totalKnownOwned);
     for (const zone of zones) {
-      if (!subtractCounter(remainder, zone.knownCards)) return zones;
+      if (!subtractCounter(remainder, zone.knownCards)) return { zones, ambiguousLocationGroups: [] };
     }
 
-    if (mapTotal(remainder) !== drawZone.unknownCount) return zones;
+    if (mapTotal(remainder) !== anonymousTotal) return { zones, ambiguousLocationGroups: [] };
 
-    addCounter(drawZone.knownCards, remainder);
-    drawZone.unknownCount = 0;
-    return zones;
+    if (zonesWithAnonymousCards.length === 1) {
+      const zone = zonesWithAnonymousCards[0]!;
+      addCounter(zone.knownCards, remainder);
+      zone.unknownCount = 0;
+      return { zones, ambiguousLocationGroups: [] };
+    }
+
+    const ambiguousLocationGroups = [
+      {
+        zoneKeys: zonesWithAnonymousCards.map((zone) => zone.zoneKey),
+        zoneNames: [...new Set(zonesWithAnonymousCards.map((zone) => zone.zoneName))],
+        knownCards: toObject(remainder),
+        totalCount: anonymousTotal
+      }
+    ];
+
+    for (const zone of zonesWithAnonymousCards) {
+      zone.ambiguousCount = zone.unknownCount;
+      zone.unknownCount = 0;
+    }
+
+    return { zones, ambiguousLocationGroups };
   }
 
   private summarizePlayer(player: MutablePlayerKnowledge): PlayerDeckKnowledge {
-    const derivedZones = this.deriveZonesForSummary(player);
+    const derived = this.deriveZonesForSummary(player);
     const zoneKnownTotals = new Map<string, number>();
     let unknownLocatedCount = 0;
-    const zones = derivedZones
+    const zones = derived.zones
       .map((zone) => {
         for (const [card, count] of zone.knownCards) increment(zoneKnownTotals, card, count);
         unknownLocatedCount += zone.unknownCount;
-        const totalCount = mapTotal(zone.knownCards) + zone.unknownCount;
+        const totalCount = mapTotal(zone.knownCards) + zone.unknownCount + zone.ambiguousCount;
         return {
           zoneKey: zone.zoneKey,
           zoneName: zone.zoneName,
           knownCards: toObject(zone.knownCards),
           unknownCount: zone.unknownCount,
+          ambiguousCount: zone.ambiguousCount,
           totalCount
         };
       })
@@ -417,6 +457,7 @@ export class DeckKnowledgeTracker {
       totalKnownOwned: toObject(player.totalKnownOwned),
       totalUnknownOwned: player.totalUnknownOwned,
       zones,
+      ambiguousLocationGroups: derived.ambiguousLocationGroups,
       unlocatedKnownCards: toObject(unlocatedKnownCards),
       unknownLocatedCount
     };

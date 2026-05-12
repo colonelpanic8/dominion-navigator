@@ -73,13 +73,13 @@ function thirdPlayerSummaryZone(index: number, zoneName: string, topCards: strin
   };
 }
 
-function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", setupCards?: string[]): NavigatorSnapshot {
+function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", startingDeck?: string[]): NavigatorSnapshot {
   return {
     kind: "snapshot",
     gameInstanceId,
     gameRunning: true,
     capturedAt: new Date(0).toISOString(),
-    ...(setupCards ? { setupCards } : {}),
+    ...(startingDeck ? { startingDeck } : {}),
     players: [player, opponent, thirdPlayer],
     hero: player,
     heroZones: playerZones,
@@ -160,21 +160,57 @@ test("draw zone identities are derived from a complete owned ledger remainder", 
   assert.deepEqual(knowledge?.unlocatedKnownCards, {});
 });
 
+test("drawing named cards from an anonymous draw zone removes those anonymous cards", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(0, "HandZone", ["Copper", "Copper", "Copper", "Estate", "Estate"]),
+        zone(1, "DrawZone", [], 5)
+      ],
+      "game-1",
+      ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Estate", "Estate", "Estate"]
+    )
+  );
+
+  tracker.applyMove(
+    moveWithNames(summaryZone(1, "DrawZone", ["Back"]), summaryZone(0, "HandZone", ["Copper", "Estate"]), [
+      "Copper",
+      "Estate"
+    ])
+  );
+
+  const [knowledge] = tracker.summary().players;
+  const hand = knowledge?.zones.find((item) => item.zoneName === "HandZone");
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.deepEqual(hand?.knownCards, { Copper: 4, Estate: 3 });
+  assert.deepEqual(draw?.knownCards, { Copper: 3 });
+  assert.equal(draw?.unknownCount, 0);
+  assert.equal(draw?.totalCount, 3);
+});
+
 test("initial standard starting deck seeds a fully known owned ledger", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
-    snapshot([
-      zone(0, "HandZone", ["Copper", "Copper", "Copper", "Estate", "Estate"]),
-      zone(1, "DrawZone", [], 5),
-      zone(10, "HandZone", [], 5, opponent),
-      zone(11, "DrawZone", [], 5, opponent)
-    ])
+    snapshot(
+      [
+        zone(0, "HandZone", ["Copper", "Copper", "Copper", "Estate", "Estate"]),
+        zone(1, "DrawZone", [], 5),
+        zone(10, "HandZone", [], 5, opponent),
+        zone(11, "DrawZone", [], 5, opponent)
+      ],
+      "game-1",
+      ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Estate", "Estate", "Estate"]
+    )
   );
 
   const summary = tracker.summary();
   const heroKnowledge = summary.players.find((item) => item.player.index === player.index);
   const opponentKnowledge = summary.players.find((item) => item.player.index === opponent.index);
   const heroDraw = heroKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const opponentHand = opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+  const opponentDraw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
   assert.deepEqual(heroKnowledge?.totalKnownOwned, { Copper: 7, Estate: 3 });
   assert.equal(heroKnowledge?.totalUnknownOwned, 0);
@@ -182,10 +218,22 @@ test("initial standard starting deck seeds a fully known owned ledger", () => {
   assert.equal(heroDraw?.unknownCount, 0);
   assert.deepEqual(opponentKnowledge?.totalKnownOwned, { Copper: 7, Estate: 3 });
   assert.equal(opponentKnowledge?.totalUnknownOwned, 0);
-  assert.equal(opponentKnowledge?.unknownLocatedCount, 10);
+  assert.equal(opponentHand?.unknownCount, 0);
+  assert.equal(opponentHand?.ambiguousCount, 5);
+  assert.equal(opponentDraw?.unknownCount, 0);
+  assert.equal(opponentDraw?.ambiguousCount, 5);
+  assert.equal(opponentKnowledge?.unknownLocatedCount, 0);
+  assert.deepEqual(opponentKnowledge?.ambiguousLocationGroups, [
+    {
+      zoneKeys: ["10:HandZone", "11:DrawZone"],
+      zoneNames: ["HandZone", "DrawZone"],
+      knownCards: { Copper: 7, Estate: 3 },
+      totalCount: 10
+    }
+  ]);
 });
 
-test("initial shelter starting deck seeds shelters instead of Estates", () => {
+test("initial custom starting deck is seeded from the page-provided deck list", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
     snapshot(
@@ -194,7 +242,7 @@ test("initial shelter starting deck seeds shelters instead of Estates", () => {
         zone(1, "DrawZone", [], 5)
       ],
       "game-1",
-      ["Copper", "Hovel", "Necropolis", "Overgrown Estate"]
+      ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Hovel", "Necropolis", "Overgrown Estate"]
     )
   );
 
