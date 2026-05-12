@@ -160,6 +160,10 @@ Useful controller/canvas interactions discovered while testing game `#178428799`
 ```js
 const game = window.__dominionNavigator.game;
 
+// Prefer this before starting test games. Dominion labels AnimationOptions.INSTANT as "None".
+game.optionsWindow.animationType = 5;
+game.optionsModel.setAnimations(5);
+
 // Dismiss the "Your starting cards" prompt.
 game.questionModel.gameButtons.find((button) => button.text === "Start Game").onClick();
 
@@ -180,9 +184,11 @@ c buys and gains a Vassal.
 
 The Vassal supply count dropped from 10 to 9. This is the first successful purchase of a `must-check` card in the audit kingdom.
 
+After setting animations to `None`, resigning, and restarting from the same table, game `#178429682` reached `Turn 1 - colonelpanic8` cleanly with no animation queue backlog. The visible game buttons were `Autoplay Treasures` and `End Buys`, confirming this is the preferred setup for future card-effect playthroughs.
+
 ### Current Testing Limitation
 
-The debug browser processes Dominion animations slowly, and forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
+The debug browser processes Dominion animations slowly unless the Dominion animation option is set to `None`. Forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
 
 Because of that, this session started custom-kingdom tests and successfully bought Vassal, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Bandit, Bureaucrat, Harbinger, Mine, Sentry, or Vassal.
 
