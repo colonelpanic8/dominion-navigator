@@ -44,6 +44,16 @@ test("falls back to likely singular card names when known names are incomplete",
   ]);
 });
 
+test("parses empty card list text as no cards", () => {
+  assert.deepEqual(parseLogCardList("nothing"), []);
+  assert.deepEqual(parseLogCardList("nothing."), []);
+  assert.deepEqual(parseLogCardList("no cards"), []);
+  assert.deepEqual(parseRevealedHandLog("L reveals their hand: nothing.", ["Copper"]), {
+    playerToken: "L",
+    cards: []
+  });
+});
+
 test("parses reaction logs", () => {
   assert.deepEqual(parseReactionLog("L reacts with a Moat.", ["Moat"]), {
     playerToken: "L",

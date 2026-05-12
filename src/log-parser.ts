@@ -34,6 +34,8 @@ export function parseReactionLog(text: string, knownCardNames: Iterable<string> 
 
 export function parseLogCardList(text: string, knownCardNames: Iterable<string> = []): string[] {
   const knownCards = knownCardNameMap(knownCardNames);
+  if (isEmptyCardListText(text)) return [];
+
   const parts = text
     .replace(/,?\s+and\s+/g, ", ")
     .split(",")
@@ -51,6 +53,10 @@ export function parseLogCardList(text: string, knownCardNames: Iterable<string> 
   }
 
   return cards;
+}
+
+function isEmptyCardListText(text: string): boolean {
+  return /^(?:nothing|no cards?|none)$/i.test(text.trim().replace(/[.!]$/, ""));
 }
 
 function knownCardNameMap(knownCardNames: Iterable<string>): Map<string, string> {
