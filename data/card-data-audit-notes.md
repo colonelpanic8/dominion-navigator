@@ -37,6 +37,41 @@ Date: 2026-05-12.
 
 Purpose: establish a repeatable way to start bot games, restart from the same table, set specific kingdom cards, and begin checking the cards marked `must-check` in `trackerAudit.behaviorReview`.
 
+## Tracker Risk Hunt
+
+The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 364 `must-check` keys out of 806 tracker candidates.
+
+The most suspicious current tracker assumption is in ownership handling for moves from unowned zones into player-controlled zones. `DeckKnowledgeTracker.applyMove` treats any move from a non-player-owned zone into a player-owned zone as a gain and adds the moved card to that player's owned-card ledger. That is correct for normal gains, but likely wrong for effects that play a card from the trash or Supply while explicitly leaving it there.
+
+High-risk `must-check` bucket:
+
+```text
+trackerAudit.behaviorReview.behaviorReviewKeysByReason["play-from-non-hand-or-unowned-card"]
+```
+
+Likely affected examples:
+
+- `NECROMANCER`: plays a face-up Action from the trash, leaving it there.
+- `BAND_OF_MISFITS`, `OVERLORD`, `CAPTAIN`: play a non-Duration Action from the Supply, leaving it there.
+- `RIVERBOAT`, `WAY_OF_THE_MOUSE`, `INHERITANCE`: play a set-aside Supply card while leaving it set aside.
+
+Synthetic tracker break:
+
+1. Start with the hero owning only `Necromancer` in `InPlayZone`.
+2. Apply a card-move from unowned `TrashZone` to hero `InPlayZone` for `Zombie Apprentice`.
+3. The current summary reports:
+
+```json
+{
+  "totalKnownOwned": {
+    "Necromancer": 1,
+    "Zombie Apprentice": 1
+  }
+}
+```
+
+That is probably wrong for Dominion deck ownership: the Zombie is controlled/in play for the turn, but was not gained and should not enter the player's owned deck. A correct fix probably needs to distinguish cards controlled in a player zone from cards actually owned by that player. A simple "never add unowned -> InPlayZone" rule would avoid Necromancer, but could undercount true gain-and-play effects such as `INNOVATION`, `CONTINUE`, `INVASION`, `MINING_ROAD`, `RUSH`, or `SAILOR`.
+
 ### Starting and Restarting Bot Games
 
 Observed working flow from the Dominion Online lobby:
