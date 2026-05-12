@@ -228,10 +228,34 @@ The probe event stream captured two important tracker cases:
 
 A regression test now covers the Silver gain-to-deck pattern where Dominion anonymizes the card after it enters the draw pile.
 
+### Sentry Effect Check
+
+In game `#178429682`, Sentry was bought on turns 6 and 7, then drawn and played on turn 9. The Sentry prompt was advanced by clicking `Confirm Trashing`, `Confirm Discarding`, and `Done Ordering` without selecting either revealed card.
+
+The Dominion log confirmed the relevant card-location behavior:
+
+```text
+c plays a Sentry.
+c draws a Copper.
+c gets +1 Action.
+c looks at a Copper and a Silver.
+c topdecks a Copper and a Silver.
+```
+
+The probe event stream captured the important tracker sequence:
+
+- Sentry moved from `HandZone` to `InPlayZone`.
+- Copper moved from the hero `DrawZone` to `HandZone` for Sentry's `+1 Card`.
+- Silver and Copper moved from the hero `DrawZone` to a temporary hero `RevealZone`.
+- The same Silver and Copper moved from that `RevealZone` back to the hero `DrawZone`, but Dominion reported `cardsAfterMoving: ["Anonymous", "Anonymous"]` after they were topdecked.
+- The follow-up snapshot also represented the draw pile as anonymous, so snapshot reconciliation must not erase the known topdeck identities learned from the card-move event.
+
+A regression test now covers the Sentry reveal-to-topdeck pattern and the anonymous draw-pile snapshot that follows it.
+
 ### Current Testing Limitation
 
 The debug browser processes Dominion animations slowly unless the Dominion animation option is set to `None`. Forced queue draining can still hit Dominion client's own `anonymousCards` exception while unwinding startup/cleanup animations. A probe-side guard was added so navigator summaries cannot prevent Dominion's animation callback from running, but forced queue draining should be treated as a recovery/debug tactic rather than clean gameplay evidence.
 
-Because of that, this session started custom-kingdom tests and successfully exercised Bandit's reveal/gain/discard behavior and Bureaucrat's gain-to-deck/topdeck behavior, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine, Sentry, or Vassal.
+Because of that, this session started custom-kingdom tests and successfully exercised Bandit's reveal/gain/discard behavior, Bureaucrat's gain-to-deck/topdeck behavior, and Sentry's reveal/topdeck behavior, but did not complete per-card effect verification for Advisor, Alchemist, Ambassador, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine, or Vassal.
 
 Next useful step: stabilize turn entry in the Dominion client, then play through the custom kingdom and record tracker observations for each card effect that moves, reveals, gains, trashes, exiles, sets aside, or otherwise changes card-location knowledge.

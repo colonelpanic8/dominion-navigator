@@ -351,8 +351,16 @@ export class DeckKnowledgeTracker {
       unknownCount: 0
     };
 
-    zoneKnowledge.knownCards = knownCards;
-    zoneKnowledge.unknownCount = unknownCount;
+    const existingKnownCount = existing ? mapTotal(existing.knownCards) : 0;
+    const snapshotIsAnonymousOnly = knownCards.size === 0 && unknownCount > 0;
+
+    if (existing && snapshotIsAnonymousOnly && existingKnownCount > 0 && unknownCount >= existingKnownCount) {
+      zoneKnowledge.knownCards = cloneCounter(existing.knownCards);
+      zoneKnowledge.unknownCount = unknownCount - existingKnownCount;
+    } else {
+      zoneKnowledge.knownCards = knownCards;
+      zoneKnowledge.unknownCount = unknownCount;
+    }
     player.zones.set(key, zoneKnowledge);
 
     for (const [card, count] of zoneKnowledge.knownCards) {

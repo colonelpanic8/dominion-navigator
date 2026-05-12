@@ -539,6 +539,42 @@ test("discarding revealed cards keeps before-move identities when Dominion anony
   assert.equal(discard?.totalCount, 2);
 });
 
+test("topdecking revealed cards keeps before-move identities when Dominion anonymizes draw cards", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "DrawZone", [], 6),
+      zone(2, "RevealZone", ["Silver", "Copper"], 0)
+    ])
+  );
+
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(1).toISOString(),
+    phase: "after",
+    from: summaryZone(2, "RevealZone", ["Silver", "Copper"]),
+    to: summaryZone(1, "DrawZone", ["Back"]),
+    cardIds: [20, 21],
+    cards: ["Silver", "Copper"],
+    cardIdsAfterMoving: [-1, -1],
+    cardsAfterMoving: ["Anonymous", "Anonymous"]
+  });
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "DrawZone", [], 8),
+      zone(2, "RevealZone", [], 0)
+    ])
+  );
+
+  const [knowledge] = tracker.summary().players;
+  const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.equal(draw?.knownCards.Copper, 1);
+  assert.equal(draw?.knownCards.Silver, 1);
+  assert.equal(draw?.unknownCount, 6);
+  assert.equal(draw?.totalCount, 8);
+});
+
 test("discard snapshots are ignored even when they are empty", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
