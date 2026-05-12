@@ -44,6 +44,21 @@ test("falls back to likely singular card names when known names are incomplete",
   ]);
 });
 
+test("does not singularize already-singular s-ending card names", () => {
+  assert.deepEqual(parseLogCardList("a Fortress, a Duchess, and a Crossroads"), ["Fortress", "Duchess", "Crossroads"]);
+});
+
+test("keeps canonical plural-form card names", () => {
+  assert.deepEqual(parseLogCardList("2 Rats, 2 Spoils, and 2 Supplies"), [
+    "Rats",
+    "Rats",
+    "Spoils",
+    "Spoils",
+    "Supplies",
+    "Supplies"
+  ]);
+});
+
 test("parses empty card list text as no cards", () => {
   assert.deepEqual(parseLogCardList("nothing"), []);
   assert.deepEqual(parseLogCardList("nothing."), []);

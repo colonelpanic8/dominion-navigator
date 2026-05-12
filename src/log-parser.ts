@@ -10,6 +10,57 @@ export type ReactionLog = {
 
 const REVEALED_HAND_LOG_PATTERN = /^(.+?) reveals their hand: (.+)\.$/;
 const REACTION_LOG_PATTERN = /^(.+?) reacts with (.+?)\.$/;
+const CANONICAL_S_ENDING_CARD_NAMES = new Map(
+  [
+    "Apparatus",
+    "Band Of Misfits",
+    "Campus",
+    "Castles",
+    "Catacombs",
+    "Crossroads",
+    "Distant Lands",
+    "Doubloons",
+    "Duchess",
+    "Enchantress",
+    "Fairgrounds",
+    "Farmhands",
+    "Followers",
+    "Fortress",
+    "Gardens",
+    "Goons",
+    "Hanging Gardens",
+    "Haunted Woods",
+    "Horse Traders",
+    "Hunting Grounds",
+    "Ill Gotten Gains",
+    "Ironworks",
+    "Jack Of All Trades",
+    "Jewels",
+    "Knights",
+    "Lab Rats",
+    "Lackeys",
+    "Marquis",
+    "Necropolis",
+    "Nobles",
+    "Nomads",
+    "Oasis",
+    "Princess",
+    "Rats",
+    "Rocks",
+    "Settlers",
+    "Smugglers",
+    "Sorceress",
+    "Spices",
+    "Spoils",
+    "Stables",
+    "Supplies",
+    "Survivors",
+    "Swamp Shacks",
+    "Tide Pools",
+    "Tools",
+    "Trinkets"
+  ].map((name) => [name.toLocaleLowerCase(), name])
+);
 
 export function parseRevealedHandLog(text: string, knownCardNames: Iterable<string> = []): RevealedHandLog | undefined {
   const match = text.match(REVEALED_HAND_LOG_PATTERN);
@@ -48,7 +99,7 @@ export function parseLogCardList(text: string, knownCardNames: Iterable<string> 
     const count = countMatch ? Number(countMatch[1]) : 1;
     const rawName = (countMatch ? countMatch[2] : part)?.replace(/^(?:a|an|the)\s+/i, "").trim();
     if (!rawName || !Number.isFinite(count) || count <= 0) continue;
-    const name = normalizeLogCardName(rawName, knownCards);
+    const name = normalizeLogCardName(rawName, knownCards, Boolean(countMatch));
     for (let index = 0; index < count; index += 1) cards.push(name);
   }
 
@@ -65,12 +116,17 @@ function knownCardNameMap(knownCardNames: Iterable<string>): Map<string, string>
   return cards;
 }
 
-function normalizeLogCardName(rawName: string, knownCardNames: Map<string, string>): string {
+function normalizeLogCardName(rawName: string, knownCardNames: Map<string, string>, allowSingularFallback: boolean): string {
   const candidates = [rawName, ...singularCandidates(rawName)];
   for (const candidate of candidates) {
     const knownName = knownCardNames.get(candidate.toLocaleLowerCase());
     if (knownName) return knownName;
   }
+
+  const canonicalName = CANONICAL_S_ENDING_CARD_NAMES.get(rawName.toLocaleLowerCase());
+  if (canonicalName) return canonicalName;
+
+  if (!allowSingularFallback) return rawName;
   return candidates[candidates.length - 1] ?? rawName;
 }
 
