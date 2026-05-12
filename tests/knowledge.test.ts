@@ -508,6 +508,57 @@ test("three player gains remain separated by player index", () => {
   assert.equal(summary.players.find((item) => item.player.index === thirdPlayer.index)?.zones.find((item) => item.zoneName === "DiscardZone")?.knownCards.Gold, 1);
 });
 
+test("trashing cards to a neutral trash zone does not create a fake player", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(1, "HandZone", ["Chapel", "Copper", "Copper", "Estate"]),
+      zone(2, "DiscardZone", [])
+    ])
+  );
+
+  tracker.applyMove(moveWithNames(summaryZone(1, "HandZone", ["Copper"]), neutralSummaryZone(100, "TrashZone", ["Copper"]), ["Copper", "Copper"]));
+
+  const summary = tracker.summary();
+  const heroKnowledge = summary.players.find((item) => item.player.index === player.index);
+
+  assert.equal(summary.players.some((item) => item.player.index === -1), false);
+  assert.deepEqual(heroKnowledge?.totalKnownOwned, { Chapel: 1, Estate: 1 });
+  assert.equal(heroKnowledge?.zones.find((item) => item.zoneName === "TrashZone"), undefined);
+});
+
+test("restoring stale storage skips neutral pseudo-player entries", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: { Copper: 1 },
+        totalUnknownOwned: 0,
+        zones: [{ zoneKey: "1:HandZone", zoneName: "HandZone", knownCards: { Copper: 1 }, unknownCount: 0 }]
+      },
+      {
+        key: "-1",
+        player: { index: -1, isHero: false },
+        confidence: "partial",
+        totalKnownOwned: { Copper: 3 },
+        totalUnknownOwned: 0,
+        zones: [{ zoneKey: "100:TrashZone", zoneName: "TrashZone", knownCards: { Copper: 3 }, unknownCount: 0 }]
+      }
+    ]
+  });
+
+  const summary = tracker.summary();
+
+  assert.equal(summary.players.length, 1);
+  assert.equal(summary.players[0]?.player.index, player.index);
+});
+
 test("new game instance resets ownership and zone knowledge even with the same player", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(snapshot([zone(1, "InPlayZone", ["Gold"]), zone(2, "HandZone", ["Copper"])], "game-1"));

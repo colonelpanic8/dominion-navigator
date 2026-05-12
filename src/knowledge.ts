@@ -158,7 +158,7 @@ function visibleUnknownCount(zone: ZoneDetail): number {
 
 function playerKey(player: PlayerSummary | undefined): string | undefined {
   if (!player) return undefined;
-  if (player.index !== undefined) return String(player.index);
+  if (player.index !== undefined) return player.index >= 0 ? String(player.index) : undefined;
   return player.name;
 }
 
@@ -314,7 +314,9 @@ export class DeckKnowledgeTracker {
     this.gameInstanceId = serialized.gameInstanceId;
 
     for (const player of serialized.players) {
-      this.players.set(player.key, {
+      const key = playerKey(player.player);
+      if (!key) continue;
+      this.players.set(key, {
         player: player.player,
         confidence: player.confidence,
         totalKnownOwned: counterFromObject(player.totalKnownOwned),
