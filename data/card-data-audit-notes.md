@@ -63,6 +63,8 @@ Use this section as the quick source of truth before choosing the next card to t
 | Cargo Ship + Stockpile | `#178449122` | Played Cargo Ship, bought Stockpile, chose the Cargo Ship set-aside, then observed next-turn hand placement. | Gained Stockpile moved through Cargo Ship set-aside and appeared in hand at start of next turn; tracker kept identity through the delayed zone. | No dedicated test; browser behavior looked correct. |
 | Stockpile | `#178449122` | Played a Stockpile that had entered hand from Cargo Ship. | Tracker showed `Stockpile · HandZone -> InPlayZone -> ExileZone`; ExileZone contained `Copper, Estate, Stockpile`, while the other Stockpile stayed on `NVZone`. | No dedicated test; browser behavior looked correct. |
 | Duplicate + Exile discard | `#178449122` | Played owned Duplicate to Tavern, bought Estate, called Duplicate to gain a second Estate, then discarded matching Estate from Exile. | Duplicate moved `HandZone -> TavernZone -> InPlayZone` and left Tavern after cleanup; Estate ownership increased from the Duplicate gain, and ExileZone lost the discarded Estate. | No dedicated test; browser behavior looked correct. |
+| Trader exchange | `game-1-1778633504087` | Bought Gear while Trader was in hand, then chose the Trader reaction. | Tracker showed `1 Silver, 1 Trader` and no owned Gear, so the gained Gear was exchanged out for Silver. | No dedicated test; browser behavior looked correct. |
+| Black Market reveal | `game-1-1778633504087` | Played Black Market; Dominion revealed City, Ghost Town, and Sanctuary from the Black Market deck, then returned them after no Black Market buy. | Tracker treated the revealed Black Market cards as neutral `SetAsideZone -> RevealZone -> SetAsideZone` movement and did not add them to ownership. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -134,7 +136,7 @@ The next highest-risk cluster should move away from the mechanics already covere
 Possession, Black Market, Prince, Crypt, Gear, Church, Cage, Graverobber, Trader, Changeling
 ```
 
-Add these landscapes if the table editor accepts them alongside the ten piles:
+Attempted to add these landscapes too, but the running game only included the ten-pile core; keep them for a later landscape-focused table:
 
 ```text
 Inheritance, Innovation, Continue, Rapid Expansion, March, Way of the Turtle
@@ -149,6 +151,14 @@ Coverage intent:
 - `Graverobber`: gain from trash onto deck, plus trash-from-hand-and-gain replacement.
 - `Trader`, `Changeling`: exchange / ownership-transform effects when gaining or trashing.
 - `Inheritance`, `Innovation`, `Continue`, `Rapid Expansion`, `March`, `Way of the Turtle`: play-from-non-hand and gain-and-play cases that are not covered by Band Of Misfits or Necromancer.
+
+Game client instance `game-1-1778633504087` started with the ten-pile core plus Potion. The extra landscape candidates above were accepted by the table helper but did not appear in the running game.
+
+Initial observations:
+
+- Turn 1: bought `Black Market`.
+- Turn 2/3: bought `Trader`; on the following turn, bought `Gear` while Trader was in hand and chose `Trader`. Tracker showed the result as `1 Silver, 1 Trader` with no owned Gear.
+- Turn 4: played `Black Market`; it revealed `City`, `Ghost Town`, and `Sanctuary` from the Black Market deck. After choosing no Black Market buy, tracker showed those cards moving `SetAsideZone -> RevealZone -> SetAsideZone` without adding them to hero ownership.
 
 ## Tracker Risk Hunt
 
