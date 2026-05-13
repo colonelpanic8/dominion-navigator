@@ -126,6 +126,30 @@ Initial observations:
 - Turn 12: played Stockpile from hand; tracker showed `HandZone -> InPlayZone -> ExileZone`, while the separate Native Village Stockpile remained on `NVZone`.
 - Turn 13: after buying Estate and calling Duplicate, the matching Estate in Exile could be discarded; tracker removed it from `ExileZone` and retained the copied Estate gain.
 
+### Candidate Stress Kingdom 2
+
+The next highest-risk cluster should move away from the mechanics already covered by Stress Kingdom 1 and target unverified effects that can change card ownership, play cards from unusual locations, or keep cards out of ordinary cleanup for multiple turns:
+
+```text
+Possession, Black Market, Prince, Crypt, Gear, Church, Cage, Graverobber, Trader, Changeling
+```
+
+Add these landscapes if the table editor accepts them alongside the ten piles:
+
+```text
+Inheritance, Innovation, Continue, Rapid Expansion, March, Way of the Turtle
+```
+
+Coverage intent:
+
+- `Possession`: controlled extra turn where gains go to the possessor and trashed cards are set aside before returning to the possessed player's discard.
+- `Black Market`: reveal and buy from a non-Supply Black Market deck, then bottom-deck the unbought revealed cards.
+- `Prince`: set aside an owned Action and replay it from set-aside at the start of each turn.
+- `Crypt`, `Gear`, `Church`, `Cage`: delayed face-down set-aside under/near a card, then later hand return or trash-trigger return.
+- `Graverobber`: gain from trash onto deck, plus trash-from-hand-and-gain replacement.
+- `Trader`, `Changeling`: exchange / ownership-transform effects when gaining or trashing.
+- `Inheritance`, `Innovation`, `Continue`, `Rapid Expansion`, `March`, `Way of the Turtle`: play-from-non-hand and gain-and-play cases that are not covered by Band Of Misfits or Necromancer.
+
 ## Tracker Risk Hunt
 
 The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 366 `must-check` keys out of 806 tracker candidates.
