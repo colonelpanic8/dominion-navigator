@@ -72,6 +72,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Church | `#178450013` | Played Church, set aside Changeling and Estate, observed next-turn return, then trashed Estate with Church. | Tracker held the set-aside cards under a separate Church SetAsideZone, returned both to hand next turn, and removed the trashed Estate from ownership. | No dedicated test; browser behavior looked correct. |
 | Cage + Victory trigger | `#178450013` | Played Cage, set aside Changeling and Silver, bought Estate, then resolved Cage's self-trash and immediate return. | Tracker moved Cage out of ownership, returned Silver and Changeling to hand, and kept the gained Estate in discard. | No dedicated test; browser behavior looked correct. |
 | Graverobber gain from trash | `#178450013` | Trashed Black Market with Church, then played Graverobber and gained Changeling from the trash onto the draw pile. | Tracker showed `Changeling · TrashZone -> your DrawZone` and added the gained Changeling to hero ownership. | No dedicated test; browser behavior looked correct. |
+| Crypt | `#178450013` | Played Crypt, set aside Silver and Potion from play, then chose Silver to return at the next turn start. | Tracker kept Potion in a Crypt SetAsideZone while moving Silver from SetAsideZone to hand; Crypt stayed in play as the duration source. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -174,6 +175,7 @@ Initial observations:
 - Turn 13: played `Cage`, set aside Changeling and Silver, bought Estate, then Cage trashed itself and immediately returned the set-aside cards to hand.
 - Turn 14: bought `Graverobber`; this is setup only until Graverobber is drawn and played.
 - Turn 17: used Church to trash Black Market, then played `Graverobber` and gained Changeling from the trash onto the draw pile. The direct client method selected the first trash option, so this verified Graverobber's trash-to-deck movement with Changeling rather than Black Market.
+- Turn 20/21: played `Crypt`, set aside Silver and Potion from play, then returned Silver at the next turn start while Potion remained in SetAsideZone.
 
 ## Tracker Risk Hunt
 
