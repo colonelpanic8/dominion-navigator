@@ -100,14 +100,17 @@ Use this section as the quick source of truth before choosing the next card to t
 
 ### High-Risk Still Worth Prioritizing
 
-- Play-from-Supply Command cards: `Overlord` remains unchecked. `Band Of Misfits` and `Captain` have browser coverage for leaving the Supply card unowned.
-- Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
-- Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
-- Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
-- Gain-and-play / gain-to-non-discard: `Continue`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`. `Cargo Ship`, `Travelling Fair`, `Summon`, `Blockade`, and `Innovation` have browser coverage.
-- Player-to-player transfer: `Masquerade`.
-- Possession/control: `Possession`.
-- Replay-and-trash / replay-with-gain cards: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, `Royal Carriage`. `Procession` is especially suspicious because the selected Action is played twice, then trashed, then replaced by a gained Action costing exactly one more.
+The audit should now prioritize interaction risk over checking every member of a mechanically similar family. Travelling Fair gave browser coverage plus a regression for topdeck log suffix parsing, so `Way Of The Seal`, `Tracker`, `Royal Seal`, and `Tiara` do not each need isolated browser runs unless they are part of a stacked replacement test.
+
+Highest-value risk groups:
+
+- Off-turn movement and other-player turns: effects that move hero-owned cards when it is not the hero's normal turn, or move cards during another player's decision window. Candidate interactions: `Duplicate`/`Royal Carriage` calls during another player's gain or attack, `Horse Traders`, `Caravan Guard`, `Black Cat`, `Falconer`, and Duration start-turn returns while the opponent's turn just ended.
+- Reveal/anonymous identity conflicts: effects that reveal cards, then move or anonymize them before the tracker can reconcile identity. Candidate interactions: `Sentry`, `Patrol`, `Journeyman`, `Oracle`, `Advisor`, `Apothecary`, `Secret Passage`, and reveal-then-topdeck/discard chains.
+- Replacement effects stacking on the same gain/trash: multiple prompts can redirect a gained or trashed card, so the tracker may see anonymous intermediate movement plus source-specific logs. Candidate interactions: `Travelling Fair` plus `Watchtower`/`Trader`/`Way Of The Seal`; `Fortress` trashed by `Lurker`, `Procession`, or `Remodel`; `Changeling` exchanging a gained card that was already redirected.
+- Non-owned cards entering player-controlled zones: command, trash-play, and set-aside Supply cards should be controlled without becoming owned. `Band Of Misfits`, `Necromancer`, and `Captain` have coverage; `Overlord`, `Riverboat`, `Way Of The Mouse`, and `Inheritance` remain useful comparisons.
+- Persistent private zones and delayed returns: cards can sit on mats or set-aside zones across turns, then return in batches or one at a time. Candidate interactions: `Native Village` plus cards later drawn from the mat, Reserve/Tavern cards, `Island`, `Prince`, `Archive`, `Crypt`, `Church`, `Gear`, and `Cargo Ship`.
+- Control and player-to-player ownership changes: cards can be moved, gained, trashed, or returned while another player controls decisions. Candidate interactions: `Possession`, `Masquerade`, `Ambassador`, `Messenger` first-gain distribution, and attacks that cause every player to gain or trash in sequence.
+- Replay-and-trash / replay-with-gain chains: the same physical card can be played multiple times, trashed, replaced, and followed by a gain. Candidate interactions: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, and `Royal Carriage`, especially when the replayed card is `Fortress`, `Experiment`, `Horse`, or a Duration.
 
 ### Stress Kingdom 1
 
