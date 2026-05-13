@@ -75,6 +75,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Graverobber trash-and-gain | `#178450013` | Played Graverobber, trashed Trader from hand, and gained Gold. | Tracker showed `Trader · your HandZone -> TrashZone` followed by `Gold · SetAsideZone -> your DiscardZone`; ownership removed Trader and added Gold. | No dedicated test; browser behavior looked correct. |
 | Crypt | `#178450013` | Played Crypt, set aside Silver and Potion from play, then chose Silver to return at the next turn start. | Tracker kept Potion in a Crypt SetAsideZone while moving Silver from SetAsideZone to hand; Crypt stayed in play as the duration source. | No dedicated test; browser behavior looked correct. |
 | Procession + Fortress trash replacement | `#178452110` | Played Procession, selected Fortress, saw Fortress play twice, then Procession trashed it and Fortress replaced the trash by moving to hand. | Tracker showed `Fortress · your InPlayZone -> TrashZone -> your HandZone`; known ownership retained Fortress and placed one copy in hand. | No dedicated test; exact-cost Procession gain still pending. |
+| Procession + Village trash | `#178452253` | Played Procession, selected Village, saw Village play twice and then move from play to trash. | Tracker showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one. | No dedicated test; exact-cost Procession gain still pending. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -89,7 +90,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Vassal | Bought successfully in custom kingdom; supply count dropped. | Need play-effect verification. |
 | Prince | Bought in stress kingdom 2 on turn 27 after Gold plus Silvers produced enough coins. | Need play-effect verification for Prince set-aside and repeated start-turn replay. |
 | Possession | Bought in stress kingdom 2 on turn 28 with `6 + Potion`. | Need play-effect verification for controlled turn ownership, gains, and trashed-card return behavior. |
-| Procession | Procession + Fortress trash replacement verified in game `#178452110`, but the browser run did not surface/complete the exact-cost replacement gain after the Fortress trash replacement. | Need full Procession verification where the replacement Action gain is selected and tracker adds the gained card separately. |
+| Procession | Procession + Fortress trash replacement verified in game `#178452110`; Procession + Village trash verified in game `#178452253`. In both browser runs, the exact-cost replacement gain did not surface/complete after the trash step. | Need full Procession verification where the replacement Action gain is selected and tracker adds the gained card separately. |
 | Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine | Included in early custom kingdoms or audit setup. | Need actual effect playthroughs and tracker checks. |
 
 ### High-Risk Still Worth Prioritizing
@@ -203,7 +204,8 @@ Initial observations:
 
 - Game `#178452110`: played `Procession`, selected `Fortress`, and Dominion logged `plays a Fortress`, `plays a Fortress again`, `trashes a Fortress`, then `puts a Fortress into their hand`.
 - The navigator overlay showed the corresponding movement as `Fortress · your InPlayZone -> TrashZone -> your HandZone`, with known ownership retaining Fortress. This verifies the trash-replacement part of `Procession + Fortress`.
-- The exact-cost replacement gain after Procession did not complete in this browser run; no gain prompt or gained card was observed after the Fortress replacement. Keep full Procession verification open.
+- Game `#178452253`: played `Procession`, selected `Village`, and Dominion logged `plays a Village`, `plays a Village again`, then `trashes a Village`. The navigator overlay showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one.
+- The exact-cost replacement gain after Procession did not complete in either browser run; no gain prompt or gained card was observed after the trash step. Keep full Procession verification open.
 
 ## Tracker Risk Hunt
 
