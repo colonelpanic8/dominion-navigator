@@ -21,10 +21,19 @@ export type CardSummary = {
   name: string;
 };
 
+export type BoundsSummary = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex?: number;
+};
+
 export type ZoneStackSummary = {
   cardCount: number;
   anonymousCards: number;
   topCard?: string;
+  bounds?: BoundsSummary;
   cards: CardSummary[];
 };
 
@@ -73,6 +82,11 @@ export type CardMoveSummary = {
   animationClass?: string;
 };
 
+export type KnowledgeWindowCardSummary = {
+  name: string;
+  count: number;
+};
+
 export type ProbeStatusMessage = {
   source: typeof MESSAGE_SOURCE;
   type: "status";
@@ -100,4 +114,13 @@ export type ContentCommand =
   | {
       source: typeof MESSAGE_SOURCE;
       type: "request-snapshot";
+    }
+  | {
+      source: typeof MESSAGE_SOURCE;
+      type: "show-draw-knowledge-window";
+      payload: {
+        sourceZoneIndex: number;
+        cards: KnowledgeWindowCardSummary[];
+        unknownCount: number;
+      };
     };

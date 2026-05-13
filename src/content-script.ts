@@ -1,6 +1,7 @@
 import {
   CardMoveSummary,
   ContentCommand,
+  KnowledgeWindowCardSummary,
   MESSAGE_SOURCE,
   NavigatorSnapshot,
   ProbeMessage,
@@ -59,11 +60,13 @@ const recentAnonymousTopdecks: Array<{ owner?: ZoneSummary["owner"]; count: numb
 const seenLogLines = new WeakSet<Element>();
 let pendingLogLineFirstSeen = new WeakMap<Element, number>();
 const tracker = new DeckKnowledgeTracker();
+let resizeSnapshotTimer: number | undefined;
+let pendingHeroDrawWindowOpen = false;
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
 let logObserverReady = false;
 
-const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v3:";
+const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v4:";
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 const LOG_LINE_RETRY_MS = 5000;
 
@@ -118,7 +121,19 @@ shadow.innerHTML = `
       color: #fff;
       font-weight: 700;
     }
+    .text-button {
+      min-width: 0;
+      width: 100%;
+      padding: 0 8px;
+      justify-content: center;
+      font-size: 12px;
+    }
     button:hover { background: rgba(255,255,255,.16); }
+    button:disabled {
+      cursor: default;
+      opacity: .45;
+    }
+    button:disabled:hover { background: rgba(255,255,255,.08); }
     .setting {
       display: flex;
       align-items: center;
@@ -137,16 +152,28 @@ shadow.innerHTML = `
       color: #b9c0c9;
       margin-bottom: 8px;
     }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
     .zone {
       border-top: 1px solid rgba(255,255,255,.14);
       padding: 7px 0;
     }
     .zone-title {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 8px;
       font-weight: 650;
       margin-bottom: 4px;
+    }
+    .title-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
     .cards {
       color: #dce2ea;
@@ -215,6 +242,9 @@ shadow.innerHTML = `
         <span>Identity repair</span>
         <input id="identity-repair" type="checkbox" />
       </label>
+      <div class="actions">
+        <button id="show-deck" class="text-button" title="Open your draw pile knowledge in a Dominion card window">Open Draw Window</button>
+      </div>
       <div class="knowledge">
         <div class="zone-title"><span>Knowledge Model</span></div>
         <div id="knowledge"><span class="muted">No deck knowledge yet.</span></div>
@@ -233,6 +263,7 @@ const metaElement = shadow.querySelector<HTMLElement>("#meta")!;
 const zonesElement = shadow.querySelector<HTMLElement>("#zones")!;
 const movesElement = shadow.querySelector<HTMLElement>("#moves")!;
 const knowledgeElement = shadow.querySelector<HTMLElement>("#knowledge")!;
+const showDeckButton = shadow.querySelector<HTMLButtonElement>("#show-deck")!;
 const toggleButton = shadow.querySelector<HTMLButtonElement>("#toggle")!;
 const refreshButton = shadow.querySelector<HTMLButtonElement>("#refresh")!;
 const identityRepairInput = shadow.querySelector<HTMLInputElement>("#identity-repair")!;
@@ -243,6 +274,7 @@ toggleButton.addEventListener("click", () => {
 });
 
 refreshButton.addEventListener("click", requestSnapshot);
+showDeckButton.addEventListener("click", showHeroDrawKnowledgeWindow);
 
 identityRepairInput.checked = tracker.isLocationIdentityRepairEnabled();
 identityRepairInput.addEventListener("change", () => {
@@ -399,6 +431,12 @@ function samePlayer(a: ZoneSummary["owner"] | undefined, b: NavigatorSnapshot["p
   return samePlayerIdentity(a, b);
 }
 
+function recordAnonymousTopdeck(move: CardMoveSummary): void {
+  if (!shouldResolveTopdeckFromLog(move)) return;
+  recentAnonymousTopdecks.push({ owner: move.to?.owner, count: move.cardIdsAfterMoving.length, capturedAtMs: Date.now() });
+  while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
+}
+
 function playerForLogToken(token: string): NavigatorSnapshot["players"][number] | undefined {
   const players = latestSnapshot?.players ?? [];
   const exactMatches = players.filter((player) => player.name === token);
@@ -406,12 +444,6 @@ function playerForLogToken(token: string): NavigatorSnapshot["players"][number] 
 
   const prefixMatches = players.filter((player) => player.name?.startsWith(token));
   return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
-}
-
-function recordAnonymousTopdeck(move: CardMoveSummary): void {
-  if (!shouldResolveTopdeckFromLog(move)) return;
-  recentAnonymousTopdecks.push({ owner: move.to?.owner, count: move.cardIdsAfterMoving.length, capturedAtMs: Date.now() });
-  while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
 }
 
 function consumeRecentAnonymousTopdeck(player: NavigatorSnapshot["players"][number], count: number): boolean {
@@ -458,7 +490,9 @@ function knownCardNamesForLogParsing(): string[] {
   const names = new Set<string>([...(latestSnapshot?.setupCards ?? []), ...(latestSnapshot?.startingDeck ?? [])]);
   for (const player of tracker.summary().players) {
     for (const cardName of Object.keys(player.totalKnownOwned)) names.add(cardName);
-    for (const zone of player.zones) for (const cardName of Object.keys(zone.knownCards)) names.add(cardName);
+    for (const zone of player.zones) {
+      for (const cardName of Object.keys(zone.knownCards)) names.add(cardName);
+    }
   }
   return [...names];
 }
@@ -502,13 +536,10 @@ function total(counter: CardCounter): number {
   return Object.values(counter).reduce((sum, count) => sum + count, 0);
 }
 
-function formatCounter(counter: CardCounter, limit = Number.POSITIVE_INFINITY): string {
+function formatCounter(counter: CardCounter): string {
   const entries = Object.entries(counter).sort(([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName));
   if (entries.length === 0) return "";
-  const visible = entries.slice(0, limit).map(([name, count]) => `${count} ${name}`);
-  const hiddenCount = entries.slice(limit).reduce((sum, [, count]) => sum + count, 0);
-  if (hiddenCount > 0) visible.push(`${hiddenCount} more`);
-  return visible.join(", ");
+  return entries.map(([name, count]) => `${count} ${name}`).join(", ");
 }
 
 function prioritizedZones(zones: ZoneKnowledge[]): ZoneKnowledge[] {
@@ -531,7 +562,7 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
   item.append(name);
 
   item.append(renderKnowledgeLine("Known owned", String(total(player.totalKnownOwned))));
-  const ownedText = formatCounter(player.totalKnownOwned, 7);
+  const ownedText = formatCounter(player.totalKnownOwned);
   if (ownedText) item.append(renderKnowledgeLine("Owned cards", ownedText));
   if (player.totalUnknownOwned > 0) {
     item.append(renderKnowledgeLine("Owned, unknown identity", String(player.totalUnknownOwned)));
@@ -545,9 +576,20 @@ function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
     item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards), true));
   }
 
-  const unlocatedText = formatCounter(player.unlocatedKnownCards, 4);
+  for (const group of player.locationCandidateGroups) {
+    const outsideText = group.outsideCount > 0 ? `; ${group.outsideCount} not in those slots` : "";
+    item.append(
+      renderKnowledgeLine(
+        `${group.zoneNames.join(" + ")} candidates`,
+        `${group.totalCount} of ${formatCounter(group.knownCards)}${outsideText}`,
+        true
+      )
+    );
+  }
+
+  const unlocatedText = formatCounter(player.unlocatedKnownCards);
   if (unlocatedText) {
-    item.append(renderKnowledgeLine("Known, unlocated", unlocatedText));
+    item.append(renderKnowledgeLine(player.unknownLocatedCount > 0 ? "Known, uncertain location" : "Known, unlocated", unlocatedText));
   }
 
   if (player.unknownLocatedCount > 0) {
@@ -666,6 +708,148 @@ function renderZoneItem(zoneName: string, count: number, cardsText: string): HTM
   return item;
 }
 
+function zoneDetailKey(zone: Pick<ZoneDetail, "index" | "zoneName">): string {
+  return `${zone.index}:${zone.zoneName}`;
+}
+
+function boundsContainPoint(bounds: NonNullable<ZoneDetail["stacks"][number]["bounds"]>, x: number, y: number): boolean {
+  return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
+}
+
+function clickedDrawZone(snapshot: NavigatorSnapshot, x: number, y: number): ZoneDetail | undefined {
+  const hits = snapshot.playerZones
+    .filter((zone) => zone.zoneName === "DrawZone")
+    .flatMap((zone) =>
+      zone.stacks
+        .filter((stack) => stack.bounds && boundsContainPoint(stack.bounds, x, y))
+        .map((stack) => ({
+          zone,
+          zIndex: stack.bounds?.zIndex ?? 0,
+          area: (stack.bounds?.width ?? 0) * (stack.bounds?.height ?? 0)
+        }))
+    );
+
+  hits.sort((a, b) => b.zIndex - a.zIndex || a.area - b.area);
+  return hits[0]?.zone;
+}
+
+function knowledgeForZone(summary: KnowledgeSummary, zone: ZoneDetail): PlayerDeckKnowledge | undefined {
+  return summary.players.find((player) => samePlayer(zone.owner, player.player));
+}
+
+function counterToWindowCards(counter: CardCounter): KnowledgeWindowCardSummary[] {
+  return Object.entries(counter)
+    .filter(([, count]) => count > 0)
+    .sort(([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName))
+    .map(([name, count]) => ({ name, count }));
+}
+
+function rawUnknownCount(zone: ZoneDetail): number {
+  return zone.stacks.reduce((total, stack) => total + stack.anonymousCards, 0);
+}
+
+function visibleCardCounter(zone: ZoneDetail): CardCounter {
+  const counter: CardCounter = {};
+  for (const stack of zone.stacks) {
+    for (const card of stack.cards) counter[card.name] = (counter[card.name] ?? 0) + 1;
+  }
+  return counter;
+}
+
+function drawKnowledgeWindowCards(zone: ZoneDetail, summary: KnowledgeSummary): { cards: KnowledgeWindowCardSummary[]; unknownCount: number } {
+  const player = knowledgeForZone(summary, zone);
+  const key = zoneDetailKey(zone);
+  const trackedZone = player?.zones.find((item) => item.zoneKey === key);
+  if (!trackedZone) {
+    return {
+      cards: counterToWindowCards(visibleCardCounter(zone)),
+      unknownCount: rawUnknownCount(zone)
+    };
+  }
+
+  const exactCards = counterToWindowCards(trackedZone.knownCards);
+  const candidateGroup = player?.locationCandidateGroups.find((group) => group.zoneKeys.includes(key));
+  const ambiguousGroup = player?.ambiguousLocationGroups.find((group) => group.zoneKeys.includes(key));
+  const candidateCards = counterToWindowCards(candidateGroup?.knownCards ?? ambiguousGroup?.knownCards ?? {});
+
+  if (exactCards.length > 0) {
+    return {
+      cards: exactCards,
+      unknownCount: trackedZone.unknownCount + trackedZone.ambiguousCount
+    };
+  }
+
+  if (candidateCards.length > 0) {
+    return {
+      cards: candidateCards,
+      unknownCount: 0
+    };
+  }
+
+  return {
+    cards: [],
+    unknownCount: trackedZone.unknownCount + trackedZone.ambiguousCount
+  };
+}
+
+function heroDrawZone(snapshot: NavigatorSnapshot): ZoneDetail | undefined {
+  return snapshot.heroZones
+    .filter((zone) => zone.zoneName === "DrawZone")
+    .sort((a, b) => b.cardCount - a.cardCount || a.index - b.index)[0];
+}
+
+function showDrawKnowledgeWindow(zone: ZoneDetail): void {
+  const { cards, unknownCount } = drawKnowledgeWindowCards(zone, tracker.summary());
+  const command: ContentCommand = {
+    source: MESSAGE_SOURCE,
+    type: "show-draw-knowledge-window",
+    payload: {
+      sourceZoneIndex: zone.index,
+      cards,
+      unknownCount
+    }
+  };
+  window.postMessage(command, window.location.origin);
+}
+
+function showHeroDrawKnowledgeWindow(): void {
+  if (!latestSnapshot) {
+    pendingHeroDrawWindowOpen = true;
+    requestSnapshot();
+    return;
+  }
+
+  const zone = heroDrawZone(latestSnapshot);
+  if (zone) {
+    showDrawKnowledgeWindow(zone);
+    return;
+  }
+
+  pendingHeroDrawWindowOpen = true;
+  requestSnapshot();
+}
+
+function handleDocumentClick(event: MouseEvent): void {
+  if (event.button !== 0) return;
+  if (event.composedPath().includes(root)) return;
+
+  const zone = latestSnapshot ? clickedDrawZone(latestSnapshot, event.clientX, event.clientY) : undefined;
+  if (!zone) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  showDrawKnowledgeWindow(zone);
+}
+
+document.addEventListener("click", handleDocumentClick, true);
+window.addEventListener("resize", () => {
+  if (resizeSnapshotTimer !== undefined) window.clearTimeout(resizeSnapshotTimer);
+  resizeSnapshotTimer = window.setTimeout(() => {
+    resizeSnapshotTimer = undefined;
+    requestSnapshot();
+  }, 150);
+});
+
 function renderSnapshot(snapshot: NavigatorSnapshot): void {
   latestSnapshot = snapshot;
   if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
@@ -675,6 +859,11 @@ function renderSnapshot(snapshot: NavigatorSnapshot): void {
   metaElement.textContent = `${heroName} · ${turn} · ${snapshot.gameRunning ? "running" : "not running"}`;
   renderKnowledge(summary);
   renderZones(summary, snapshot);
+  if (pendingHeroDrawWindowOpen) {
+    pendingHeroDrawWindowOpen = false;
+    const zone = heroDrawZone(snapshot);
+    if (zone) showDrawKnowledgeWindow(zone);
+  }
   persistState(snapshot);
 }
 

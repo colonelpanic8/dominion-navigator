@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, "dist");
+const autoReload = !process.argv.includes("--no-auto-reload");
 let reloadTimer;
 let reloading = false;
 let pendingReload = false;
@@ -14,10 +15,12 @@ let pendingReload = false;
 async function copyStatic() {
   const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
   await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });
   await cp(resolve(root, "README.md"), resolve(dist, "README.md"));
 }
 
 function scheduleReload() {
+  if (!autoReload) return;
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(reload, 200);
 }
@@ -36,7 +39,12 @@ async function reload() {
       env: process.env
     });
     const code = await new Promise((resolvePromise) => child.on("exit", resolvePromise));
-    if (code !== 0) process.exitCode = 1;
+    if (code !== 0) {
+      console.warn(
+        "Built extension, but automatic Chrome reload failed. " +
+          "Run `npm run launch:chrome` for auto-reload, or reload the unpacked extension manually in chrome://extensions."
+      );
+    }
   } finally {
     reloading = false;
     if (pendingReload) {
@@ -90,4 +98,8 @@ for (const file of [resolve(root, "manifest.json"), resolve(root, "README.md")])
   watchFile(file, { interval: 300 }, scheduleReload);
 }
 
-console.log("Watching extension sources. Press Ctrl-C to stop.");
+if (autoReload) {
+  console.log("Watching extension sources and reloading Chrome. Press Ctrl-C to stop.");
+} else {
+  console.log("Watching extension sources without Chrome auto-reload. Press Ctrl-C to stop.");
+}

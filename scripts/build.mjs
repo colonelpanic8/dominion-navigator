@@ -32,4 +32,5 @@ await esbuild.build({
 
 const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
 await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });
 await cp(resolve(root, "README.md"), resolve(dist, "README.md"));

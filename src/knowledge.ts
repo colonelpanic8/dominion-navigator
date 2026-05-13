@@ -18,6 +18,14 @@ export type AmbiguousLocationGroup = {
   totalCount: number;
 };
 
+export type LocationCandidateGroup = {
+  zoneKeys: string[];
+  zoneNames: string[];
+  knownCards: CardCounter;
+  totalCount: number;
+  outsideCount: number;
+};
+
 export type PlayerDeckKnowledge = {
   player: PlayerSummary;
   confidence: "partial" | "observed";
@@ -25,6 +33,7 @@ export type PlayerDeckKnowledge = {
   totalUnknownOwned: number;
   zones: ZoneKnowledge[];
   ambiguousLocationGroups: AmbiguousLocationGroup[];
+  locationCandidateGroups: LocationCandidateGroup[];
   unlocatedKnownCards: CardCounter;
   unknownLocatedCount: number;
 };
@@ -82,6 +91,7 @@ type DerivedZoneKnowledge = {
 type DerivedKnowledge = {
   zones: DerivedZoneKnowledge[];
   ambiguousLocationGroups: AmbiguousLocationGroup[];
+  locationCandidateGroups: LocationCandidateGroup[];
 };
 
 function increment(counter: Map<string, number>, cardName: string, amount = 1): void {
@@ -154,6 +164,7 @@ function zoneKey(zone: Pick<ZoneSummary, "index" | "zoneName">): string {
 
 function visibleZoneCards(zone: ZoneDetail): Map<string, number> {
   const cards = new Map<string, number>();
+  if (zone.zoneName === "DrawZone") return cards;
   for (const stack of zone.stacks) {
     for (const card of stack.cards) increment(cards, card.name);
   }
@@ -161,6 +172,7 @@ function visibleZoneCards(zone: ZoneDetail): Map<string, number> {
 }
 
 function visibleUnknownCount(zone: ZoneDetail): number {
+  if (zone.zoneName === "DrawZone") return zone.stacks.reduce((total, stack) => total + stack.cardCount, 0);
   return zone.stacks.reduce((total, stack) => total + stack.anonymousCards, 0);
 }
 
@@ -223,6 +235,10 @@ function isControlledOnlyDestination(zone: ZoneSummary | undefined): boolean {
   return zone?.zoneName === "InPlayZone";
 }
 
+function isControlledOnlyZone(zone: Pick<MutableZoneKnowledge, "zoneName">): boolean {
+  return zone.zoneName === "InPlayZone";
+}
+
 export class DeckKnowledgeTracker {
   private readonly players = new Map<string, MutablePlayerKnowledge>();
   private locationIdentityRepairEnabled = false;
@@ -232,7 +248,9 @@ export class DeckKnowledgeTracker {
   setLocationIdentityRepairEnabled(enabled: boolean): void {
     this.locationIdentityRepairEnabled = enabled;
     if (enabled) {
-      for (const player of this.players.values()) this.reconcileKnownOwnedFromLocated(player);
+      for (const player of this.players.values()) {
+        this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
+      }
     }
   }
 
@@ -272,7 +290,7 @@ export class DeckKnowledgeTracker {
       this.addToZone(toPlayer, move.to, names, count);
 
       if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) this.addToOwnedLedger(toPlayer, names, count);
-      else if (fromOwned && fromPlayerKey === toPlayerKey) this.reconcileKnownOwnedFromLocated(toPlayer);
+      else if (fromOwned && fromPlayerKey === toPlayerKey) this.identifyUnknownOwnedCardsFromLocations(toPlayer);
     }
 
     if (fromPlayerKey && fromOwned && (!toOwned || fromPlayerKey !== toPlayerKey)) {
@@ -292,15 +310,7 @@ export class DeckKnowledgeTracker {
     zone.unknownCount -= 1;
     increment(zone.knownCards, cardName);
 
-    const locatedKnown = [...player.zones.values()].reduce((total, item) => total + (item.knownCards.get(cardName) ?? 0), 0);
-    const knownOwned = player.totalKnownOwned.get(cardName) ?? 0;
-    if (locatedKnown > knownOwned) {
-      const delta = locatedKnown - knownOwned;
-      increment(player.totalKnownOwned, cardName, delta);
-      player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
-    }
-    this.updateConfidence(player);
-
+    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
     return true;
   }
 
@@ -337,7 +347,7 @@ export class DeckKnowledgeTracker {
 
     if (!changed) return alreadySatisfied;
 
-    this.reconcileKnownOwnedFromLocated(player);
+    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
     this.updateConfidence(player);
     return true;
   }
@@ -356,7 +366,7 @@ export class DeckKnowledgeTracker {
     zone.unknownCount = 0;
 
     if (!alreadySatisfied) {
-      this.reconcileKnownOwnedFromLocated(player);
+      this.identifyUnknownOwnedCardsFromLocations(player);
       this.updateConfidence(player);
     }
     return true;
@@ -470,7 +480,14 @@ export class DeckKnowledgeTracker {
     const existingKnownCount = existing ? mapTotal(existing.knownCards) : 0;
     const snapshotIsAnonymousOnly = knownCards.size === 0 && unknownCount > 0;
 
-    if (existing && snapshotIsAnonymousOnly && existingKnownCount > 0 && unknownCount >= existingKnownCount) {
+    const shouldPreserveAnonymousSnapshotKnowledge = !(zone.zoneName === "DrawZone" && player.player.isHero);
+    if (
+      shouldPreserveAnonymousSnapshotKnowledge &&
+      existing &&
+      snapshotIsAnonymousOnly &&
+      existingKnownCount > 0 &&
+      unknownCount >= existingKnownCount
+    ) {
       zoneKnowledge.knownCards = cloneCounter(existing.knownCards);
       zoneKnowledge.unknownCount = unknownCount - existingKnownCount;
     } else {
@@ -479,7 +496,7 @@ export class DeckKnowledgeTracker {
     }
     player.zones.set(key, zoneKnowledge);
 
-    this.reconcileKnownOwnedFromLocated(player);
+    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
   }
 
   private pruneZonesMissingFromSnapshot(snapshot: NavigatorSnapshot): void {
@@ -536,7 +553,11 @@ export class DeckKnowledgeTracker {
   private removeFromZone(player: MutablePlayerKnowledge, zone: ZoneSummary, names: string[], count: number): void {
     const from = this.getOrCreateZone(player, zone);
     for (const name of names) {
-      if (!this.removeNamedCardFromZone(from, name) && this.shouldRemoveStaleNamedLocation(player, name)) {
+      const knownInSource = (from.knownCards.get(name) ?? 0) > 0;
+      const removedFromSource = this.removeNamedCardFromZone(from, name);
+      if (removedFromSource && !knownInSource && this.shouldRemoveStaleNamedLocation(player, name)) {
+        this.anonymizeNamedCardInAnyZone(player, name);
+      } else if (!removedFromSource && this.shouldRemoveStaleNamedLocation(player, name)) {
         this.removeNamedCardFromAnyZone(player, name);
       }
     }
@@ -560,19 +581,24 @@ export class DeckKnowledgeTracker {
     this.updateConfidence(player);
   }
 
-  private reconcileKnownOwnedFromLocated(player: MutablePlayerKnowledge): void {
+  private identifyUnknownOwnedCardsFromLocations(player: MutablePlayerKnowledge, options: { includeControlledOnlyZones?: boolean } = {}): void {
     if (!this.locationIdentityRepairEnabled) {
       this.updateConfidence(player);
       return;
     }
 
     const locatedKnown = new Map<string, number>();
-    for (const zone of player.zones.values()) addCounter(locatedKnown, zone.knownCards);
+    for (const zone of player.zones.values()) {
+      if (options.includeControlledOnlyZones === false && isControlledOnlyZone(zone)) continue;
+      addCounter(locatedKnown, zone.knownCards);
+    }
 
     for (const [card, count] of locatedKnown) {
       const knownOwned = player.totalKnownOwned.get(card) ?? 0;
       if (count <= knownOwned) continue;
-      const delta = count - knownOwned;
+      // Location evidence can identify anonymous owned cards, but only gain/loss moves change total ownership.
+      const delta = Math.min(count - knownOwned, player.totalUnknownOwned);
+      if (delta <= 0) continue;
       increment(player.totalKnownOwned, card, delta);
       player.totalUnknownOwned = Math.max(0, player.totalUnknownOwned - delta);
     }
@@ -645,6 +671,15 @@ export class DeckKnowledgeTracker {
     }
   }
 
+  private anonymizeNamedCardInAnyZone(player: MutablePlayerKnowledge, name: string): void {
+    for (const zone of player.zones.values()) {
+      if ((zone.knownCards.get(name) ?? 0) <= 0) continue;
+      decrement(zone.knownCards, name);
+      zone.unknownCount += 1;
+      return;
+    }
+  }
+
   private seedStartingDecks(snapshot: NavigatorSnapshot): void {
     if (!snapshot.startingDeck) return;
     const startingDeck = counterFromNames(snapshot.startingDeck);
@@ -682,10 +717,12 @@ export class DeckKnowledgeTracker {
       ambiguousCount: 0
     }));
 
-    if (player.totalUnknownOwned > 0) return { zones, ambiguousLocationGroups: [] };
+    if (player.totalUnknownOwned > 0) return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
+
+    this.deriveHeroDrawZoneFromOwnedRemainder(player, zones);
 
     const zonesWithAnonymousCards = zones.filter((zone) => zone.unknownCount > 0);
-    if (zonesWithAnonymousCards.length === 0) return { zones, ambiguousLocationGroups: [] };
+    if (zonesWithAnonymousCards.length === 0) return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
 
     const anonymousTotal = zonesWithAnonymousCards.reduce((total, zone) => total + zone.unknownCount, 0);
 
@@ -694,13 +731,46 @@ export class DeckKnowledgeTracker {
       subtractCounterUpToAvailable(remainder, zone.knownCards);
     }
 
-    if (mapTotal(remainder) !== anonymousTotal) return { zones, ambiguousLocationGroups: [] };
+    const remainderTotal = mapTotal(remainder);
+    if (remainderTotal < anonymousTotal) return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
 
     if (zonesWithAnonymousCards.length === 1) {
       const zone = zonesWithAnonymousCards[0]!;
-      addCounter(zone.knownCards, remainder);
-      zone.unknownCount = 0;
-      return { zones, ambiguousLocationGroups: [] };
+      if (remainderTotal === anonymousTotal) {
+        addCounter(zone.knownCards, remainder);
+        zone.unknownCount = 0;
+        return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
+      }
+
+      return {
+        zones,
+        ambiguousLocationGroups: [],
+        locationCandidateGroups: [
+          {
+            zoneKeys: [zone.zoneKey],
+            zoneNames: [zone.zoneName],
+            knownCards: toObject(remainder),
+            totalCount: anonymousTotal,
+            outsideCount: remainderTotal - anonymousTotal
+          }
+        ]
+      };
+    }
+
+    if (remainderTotal > anonymousTotal) {
+      return {
+        zones,
+        ambiguousLocationGroups: [],
+        locationCandidateGroups: [
+          {
+            zoneKeys: zonesWithAnonymousCards.map((zone) => zone.zoneKey),
+            zoneNames: [...new Set(zonesWithAnonymousCards.map((zone) => zone.zoneName))],
+            knownCards: toObject(remainder),
+            totalCount: anonymousTotal,
+            outsideCount: remainderTotal - anonymousTotal
+          }
+        ]
+      };
     }
 
     const ambiguousLocationGroups = [
@@ -717,7 +787,30 @@ export class DeckKnowledgeTracker {
       zone.unknownCount = 0;
     }
 
-    return { zones, ambiguousLocationGroups };
+    return { zones, ambiguousLocationGroups, locationCandidateGroups: [] };
+  }
+
+  private deriveHeroDrawZoneFromOwnedRemainder(player: MutablePlayerKnowledge, zones: DerivedZoneKnowledge[]): void {
+    if (!player.player.isHero) return;
+
+    const drawZones = zones.filter((zone) => zone.zoneName === "DrawZone");
+    if (drawZones.length !== 1) return;
+
+    const nonDrawUnknownCount = zones
+      .filter((zone) => zone.zoneName !== "DrawZone")
+      .reduce((total, zone) => total + zone.unknownCount + zone.ambiguousCount, 0);
+    if (nonDrawUnknownCount > 0) return;
+
+    const remainder = cloneCounter(player.totalKnownOwned);
+    for (const zone of zones) {
+      if (zone.zoneName === "DrawZone") continue;
+      subtractCounterUpToAvailable(remainder, zone.knownCards);
+    }
+
+    const drawZone = drawZones[0]!;
+    drawZone.knownCards = remainder;
+    drawZone.unknownCount = 0;
+    drawZone.ambiguousCount = 0;
   }
 
   private summarizePlayer(player: MutablePlayerKnowledge): PlayerDeckKnowledge {
@@ -758,6 +851,7 @@ export class DeckKnowledgeTracker {
       totalUnknownOwned: player.totalUnknownOwned,
       zones,
       ambiguousLocationGroups: derived.ambiguousLocationGroups,
+      locationCandidateGroups: derived.locationCandidateGroups,
       unlocatedKnownCards: toObject(unlocatedKnownCards),
       unknownLocatedCount
     };

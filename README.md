@@ -64,6 +64,23 @@ npm run dev
 
 The dev loop watches the bundled TypeScript entry points, rebuilds `dist/`, reloads the extension, and refreshes open `dominion.games` tabs so content-script changes are applied.
 
+You do not need to reinstall the extension while hacking. Load the unpacked extension from `dist/` once, then use `npm run dev` to rebuild and reload it after each change. The provided launcher does the one-time unpacked load for a dedicated Chrome profile:
+
+```sh
+npm run build
+npm run launch:chrome
+```
+
+If you load it manually in your normal Chrome profile instead, open `chrome://extensions`, enable Developer Mode, click "Load unpacked", and choose this repo's `dist/` directory. After that, `npm run dev` or `npm run reload:extension` is enough.
+
+For a normal Chrome profile that was not launched with `npm run launch:chrome`, use the build-only watcher:
+
+```sh
+npm run dev:build
+```
+
+Chrome does not expose the reload API to an already-running normal profile unless it was started with this repo's debug port. With `npm run dev:build`, reload the unpacked extension from `chrome://extensions` after changes.
+
 Type-check and build:
 
 ```sh

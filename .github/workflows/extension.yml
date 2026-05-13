@@ -1,0 +1,115 @@
+name: Extension
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload and submit the package through the Chrome Web Store API
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  package:
+    name: Test and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check extension
+        run: npm run check
+
+      - name: Upload extension package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dominion-navigator-extension
+          path: releases/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish to Chrome Web Store
+    needs: package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run check
+
+      - name: Request Chrome Web Store access token
+        id: token
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --data-urlencode "client_id=${CWS_CLIENT_ID}" \
+              --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
+              --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
+              --data-urlencode "grant_type=refresh_token" \
+              https://oauth2.googleapis.com/token
+          )"
+          access_token="$(jq -r '.access_token // empty' <<<"${response}")"
+          if [[ -z "${access_token}" ]]; then
+            echo "${response}" >&2
+            exit 1
+          fi
+          echo "::add-mask::${access_token}"
+          echo "access_token=${access_token}" >>"${GITHUB_OUTPUT}"
+
+      - name: Upload package
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          TOKEN: ${{ steps.token.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          zip_file="$(find releases -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "${zip_file}"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${TOKEN}" \
+            --header "Content-Type: application/zip" \
+            --data-binary "@${zip_file}" \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:upload"
+
+      - name: Submit for review
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          TOKEN: ${{ steps.token.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${TOKEN}" \
+            "https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:publish"
