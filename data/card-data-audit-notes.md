@@ -99,7 +99,7 @@ Use this section as the quick source of truth before choosing the next card to t
 - Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
 - Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
 - Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
-- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`.
+- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`, `Travelling Fair`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`.
 - Player-to-player transfer: `Masquerade`.
 - Possession/control: `Possession`.
 - Replay-and-trash / replay-with-gain cards: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, `Royal Carriage`. `Procession` is especially suspicious because the selected Action is played twice, then trashed, then replaced by a gained Action costing exactly one more.
@@ -239,7 +239,7 @@ Synthetic tracker regression:
 }
 ```
 
-This covers the ownership distinction for non-owned cards controlled in play. Remaining high-risk cases are effects where a gained card moves to a non-discard destination (`Summon`, `Deliver`, `Hasty`, `Rapid Expansion`, `Blockade`) or where control changes whose deck receives gains or trashed-card returns (`Possession`).
+This covers the ownership distinction for non-owned cards controlled in play. Remaining high-risk cases are effects where a gained card moves to a non-discard destination (`Summon`, `Deliver`, `Hasty`, `Rapid Expansion`, `Blockade`, `Travelling Fair`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`) or where control changes whose deck receives gains or trashed-card returns (`Possession`).
 
 Browser follow-up in game `#178442728`: after the hero played `Necromancer` and chose `Zombie Apprentice`, Dominion Online logged `c plays a Zombie Apprentice.` but did not emit a `TrashZone -> InPlayZone` card move for the Zombie. The Zombie stayed in the neutral trash zone in the client model, so the live overlay continued to show the hero owning only `7 Copper, 3 Estate, 1 Necromancer` and the hero `InPlayZone` containing only `Necromancer`. The synthetic regression still guards the tracker against equivalent client events from other play-from-unowned-source cards.
 
