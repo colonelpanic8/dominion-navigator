@@ -170,7 +170,7 @@ function playerKey(player: PlayerSummary | undefined): string | undefined {
   return player.name;
 }
 
-function cardNamesForMove(move: CardMoveSummary): string[] {
+export function cardNamesForMove(move: CardMoveSummary): string[] {
   const revealedAfter = move.cardsAfterMoving.filter((name) => name !== "Anonymous" && name !== "Unknown");
   const revealedBefore = move.cards.filter((name) => name !== "Anonymous" && name !== "Unknown");
 

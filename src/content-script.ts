@@ -16,6 +16,7 @@ import {
   ZoneKnowledge
 } from "./knowledge";
 import { parseReactionLog, parseRevealedHandLog, parseTopdeckLog } from "./log-parser";
+import { samePlayerIdentity, shouldResolveTopdeckFromLog } from "./topdeck-tracking";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
@@ -395,9 +396,7 @@ function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["h
 }
 
 function samePlayer(a: ZoneSummary["owner"] | undefined, b: NavigatorSnapshot["players"][number] | undefined): boolean {
-  if (!a || !b) return false;
-  if (a.index !== undefined && b.index !== undefined) return a.index === b.index;
-  return a.name !== undefined && a.name === b.name;
+  return samePlayerIdentity(a, b);
 }
 
 function playerForLogToken(token: string): NavigatorSnapshot["players"][number] | undefined {
@@ -409,23 +408,8 @@ function playerForLogToken(token: string): NavigatorSnapshot["players"][number] 
   return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
 }
 
-function isAnonymousTopdeckMove(move: CardMoveSummary): boolean {
-  return (
-    move.phase === "after" &&
-    move.from?.owner?.index !== undefined &&
-    move.from.owner.index >= 0 &&
-    move.to?.zoneName === "DrawZone" &&
-    move.to.owner?.index !== undefined &&
-    move.to.owner.index >= 0 &&
-    samePlayer(move.from.owner, move.to.owner) &&
-    move.cardIdsAfterMoving.length > 0 &&
-    move.cardIdsAfterMoving.every((id) => id === -1) &&
-    move.cardsAfterMoving.every((card) => card === "Anonymous")
-  );
-}
-
 function recordAnonymousTopdeck(move: CardMoveSummary): void {
-  if (!isAnonymousTopdeckMove(move)) return;
+  if (!shouldResolveTopdeckFromLog(move)) return;
   recentAnonymousTopdecks.push({ owner: move.to?.owner, count: move.cardIdsAfterMoving.length, capturedAtMs: Date.now() });
   while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
 }
