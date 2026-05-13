@@ -287,9 +287,12 @@ export class DeckKnowledgeTracker {
 
     if (toPlayerKey && move.to) {
       const toPlayer = this.ensurePlayer(move.to.owner);
-      this.addToZone(toPlayer, move.to, names, count);
+      const transfer = this.transferableCardsForDestination(toPlayer, move, names, count, fromPlayerKey, toPlayerKey);
+      this.addToZone(toPlayer, move.to, transfer.names, transfer.count);
 
-      if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) this.addToOwnedLedger(toPlayer, names, count);
+      if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) {
+        this.addToOwnedLedger(toPlayer, transfer.names, transfer.count);
+      }
       else if (fromOwned && fromPlayerKey === toPlayerKey) this.identifyUnknownOwnedCardsFromLocations(toPlayer);
     }
 
@@ -569,6 +572,45 @@ export class DeckKnowledgeTracker {
     const to = this.getOrCreateZone(player, zone);
     for (const name of names) increment(to.knownCards, name);
     to.unknownCount += Math.max(0, count - names.length);
+  }
+
+  private transferableCardsForDestination(
+    player: MutablePlayerKnowledge,
+    move: CardMoveSummary,
+    names: string[],
+    count: number,
+    fromPlayerKey: string | undefined,
+    toPlayerKey: string | undefined
+  ): { names: string[]; count: number } {
+    if (
+      !move.from ||
+      !move.to ||
+      fromPlayerKey !== toPlayerKey ||
+      !isControlledOnlyDestination(move.from) ||
+      isControlledOnlyDestination(move.to) ||
+      player.totalUnknownOwned > 0
+    ) {
+      return { names, count };
+    }
+
+    // Replay effects can leave extra visual entries in InPlayZone. Only copies still
+    // available in the owned ledger should transfer back into ordinary owned zones.
+    const remainingOwnedByName = cloneCounter(player.totalKnownOwned);
+    for (const zone of player.zones.values()) {
+      if (isControlledOnlyZone(zone)) continue;
+      subtractCounterUpToAvailable(remainingOwnedByName, zone.knownCards);
+    }
+
+    const transferableNames: string[] = [];
+    for (const name of names) {
+      const remaining = remainingOwnedByName.get(name) ?? 0;
+      if (remaining <= 0) continue;
+      transferableNames.push(name);
+      decrement(remainingOwnedByName, name);
+    }
+
+    if (transferableNames.length === names.length) return { names, count };
+    return { names: transferableNames, count: Math.min(count, transferableNames.length) };
   }
 
   private recomputeKnownOwnedFromZones(player: MutablePlayerKnowledge): void {

@@ -639,6 +639,148 @@ test("gain then play from a player zone keeps the gained card owned", () => {
   assert.deepEqual(inPlay?.knownCards, { Smithy: 1 });
 });
 
+test("controlled-only replay duplicates do not move extra physical copies to discard", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: { "Farmers' Market": 1, Flagship: 1 },
+        totalUnknownOwned: 0,
+        zones: [
+          { zoneKey: "1:InPlayZone", zoneName: "InPlayZone", knownCards: { "Farmers' Market": 2, Flagship: 1 }, unknownCount: 0 },
+          { zoneKey: "2:DiscardZone", zoneName: "DiscardZone", knownCards: {}, unknownCount: 0 }
+        ]
+      }
+    ]
+  });
+
+  tracker.applyMove(
+    moveWithNames(summaryZone(1, "InPlayZone", ["Farmers' Market"]), summaryZone(2, "DiscardZone", ["Farmers' Market"]), [
+      "Farmers' Market",
+      "Farmers' Market"
+    ])
+  );
+
+  const [knowledge] = tracker.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { "Farmers' Market": 1, Flagship: 1 });
+  assert.deepEqual(discard?.knownCards, { "Farmers' Market": 1 });
+  assert.equal(discard?.totalCount, 1);
+});
+
+test("multiple owned copies in play can all move to discard", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: { Village: 2 },
+        totalUnknownOwned: 0,
+        zones: [
+          { zoneKey: "1:InPlayZone", zoneName: "InPlayZone", knownCards: { Village: 2 }, unknownCount: 0 },
+          { zoneKey: "2:DiscardZone", zoneName: "DiscardZone", knownCards: {}, unknownCount: 0 }
+        ]
+      }
+    ]
+  });
+
+  tracker.applyMove(moveWithNames(summaryZone(1, "InPlayZone", ["Village"]), summaryZone(2, "DiscardZone", ["Village"]), ["Village", "Village"]));
+
+  const [knowledge] = tracker.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, { Village: 2 });
+  assert.deepEqual(discard?.knownCards, { Village: 2 });
+  assert.equal(discard?.totalCount, 2);
+});
+
+test("turn 11 Flagship replay cleanup preserves Native Village mat and bought cards", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: {
+          "Farmers' Market": 1,
+          Flagship: 1,
+          "Native Village": 3,
+          Silver: 1,
+          Swashbuckler: 2
+        },
+        totalUnknownOwned: 0,
+        zones: [
+          {
+            zoneKey: "1:InPlayZone",
+            zoneName: "InPlayZone",
+            knownCards: { "Farmers' Market": 2, Flagship: 1, "Native Village": 2, Silver: 1 },
+            unknownCount: 0
+          },
+          { zoneKey: "2:DiscardZone", zoneName: "DiscardZone", knownCards: {}, unknownCount: 0 },
+          { zoneKey: "3:NVZone", zoneName: "NVZone", knownCards: { Swashbuckler: 1 }, unknownCount: 0 },
+          { zoneKey: "4:HandZone", zoneName: "HandZone", knownCards: { Swashbuckler: 1, "Native Village": 1 }, unknownCount: 0 }
+        ]
+      }
+    ]
+  });
+
+  tracker.applyMove(
+    moveWithNames(neutralSummaryZone(100, "SupplyZone", ["Native Village"]), summaryZone(2, "DiscardZone", ["Native Village"]), [
+      "Native Village"
+    ])
+  );
+  tracker.applyMove(
+    moveWithNames(neutralSummaryZone(101, "SupplyZone", ["Swashbuckler"]), summaryZone(2, "DiscardZone", ["Swashbuckler"]), ["Swashbuckler"])
+  );
+  tracker.applyMove(
+    moveWithNames(summaryZone(1, "InPlayZone", ["Silver"]), summaryZone(2, "DiscardZone", ["Silver"]), [
+      "Native Village",
+      "Native Village",
+      "Flagship",
+      "Farmers' Market",
+      "Farmers' Market",
+      "Silver"
+    ])
+  );
+
+  const [knowledge] = tracker.summary().players;
+  const discard = knowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+  const nativeVillageMat = knowledge?.zones.find((item) => item.zoneName === "NVZone");
+
+  assert.deepEqual(knowledge?.totalKnownOwned, {
+    "Farmers' Market": 1,
+    Flagship: 1,
+    "Native Village": 4,
+    Silver: 1,
+    Swashbuckler: 3
+  });
+  assert.deepEqual(discard?.knownCards, {
+    "Farmers' Market": 1,
+    Flagship: 1,
+    "Native Village": 3,
+    Silver: 1,
+    Swashbuckler: 1
+  });
+  assert.deepEqual(nativeVillageMat?.knownCards, { Swashbuckler: 1 });
+  assert.equal(discard?.totalCount, 7);
+});
+
 test("log-revealed topdeck converts one anonymous draw card into a known card", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
