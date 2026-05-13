@@ -57,9 +57,11 @@ Use this section as the quick source of truth before choosing the next card to t
 | Band Of Misfits + Island | `#178449122` | Played `Band Of Misfits`, chose Supply `Island`, then put an Estate on the Island mat. | Dominion left `Band Of Misfits` in play and moved only the chosen Estate to `IslandZone`; tracker did not add an extra Supply Island. | No dedicated test; browser behavior looked correct. |
 | Band Of Misfits + Duplicate | `#178449122` | Played `Band Of Misfits`, chose Supply `Duplicate`, then continued to buy phase. | Dominion logged `plays a Duplicate` but no Supply Duplicate moved to `TavernZone`; tracker kept only Band in play and did not add extra Duplicate ownership. | No dedicated test; browser behavior looked correct. |
 | Native Village pickup | `#178449122` | Played Native Village and chose `Pick Up` after a prior set-aside. | Estate moved from `NVZone` to hand and `NVZone` became empty. | No dedicated test; browser behavior looked correct. |
-| Native Village + Stockpile | `#178449122` | Played Native Village and chose `Set Aside` with Stockpile on top of the deck. | Tracker preserved `Stockpile` identity on `NVZone`; Stockpile self-exile-on-play remains pending. | No dedicated test; browser behavior looked correct. |
+| Native Village + Stockpile | `#178449122` | Played Native Village and chose `Set Aside` with Stockpile on top of the deck. | Tracker preserved `Stockpile` identity on `NVZone`; the separate played Stockpile self-exile was verified later in the same game. | No dedicated test; browser behavior looked correct. |
 | Island | `#178449122` | Played owned Island, then set aside an Estate from hand. | Tracker moved the played Island and selected Estate to `IslandZone`, resulting in `2 Estate, 1 Island` there. | No dedicated test; browser behavior looked correct. |
 | Masquerade | `#178449122` | Opponent played Masquerade; hero passed Copper and received Estate; opponent then trashed an Estate. | Hero known ownership shifted to `6 Copper, 4 Estate`; opponent gained the Copper and lost the trashed Estate. | No dedicated test; browser behavior looked correct. |
+| Cargo Ship + Stockpile | `#178449122` | Played Cargo Ship, bought Stockpile, chose the Cargo Ship set-aside, then observed next-turn hand placement. | Gained Stockpile moved through Cargo Ship set-aside and appeared in hand at start of next turn; tracker kept identity through the delayed zone. | No dedicated test; browser behavior looked correct. |
+| Stockpile | `#178449122` | Played a Stockpile that had entered hand from Cargo Ship. | Tracker showed `Stockpile · HandZone -> InPlayZone -> ExileZone`; ExileZone contained `Copper, Estate, Stockpile`, while the other Stockpile stayed on `NVZone`. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -116,10 +118,11 @@ Initial observations:
 - Turn 7: Native Village `Pick Up` moved the set-aside Estate into hand and emptied `NVZone`.
 - Turn 7: owned `Island` moved itself plus an Estate onto `IslandZone`; tracker showed `2 Estate, 1 Island` there.
 - Turn 7/8: opponent `Masquerade` passed Estate to hero, hero passed Copper, and opponent trashed an Estate; tracker reflected the cross-player ownership transfer.
-- Turn 7: bought `Stockpile`; Turn 9 Native Village set that Stockpile aside onto `NVZone`, preserving the card identity. Stockpile self-exile-on-play remains pending.
-- Turn 8: bought `Cargo Ship`; gain-to-set-aside-on-play remains pending.
+- Turn 7: bought `Stockpile`; Turn 9 Native Village set that Stockpile aside onto `NVZone`, preserving the card identity.
+- Turn 8: bought `Cargo Ship`; Turn 11 Cargo Ship set aside a gained Stockpile, and Turn 12 put it into hand.
 - Turn 9: bought `Duplicate`; call-on-gain behavior remains pending.
 - Turn 10: `Band Of Misfits` played Supply `Duplicate`; Dominion logged the Duplicate play but did not move a Duplicate to `TavernZone` or add extra Duplicate ownership.
+- Turn 12: played Stockpile from hand; tracker showed `HandZone -> InPlayZone -> ExileZone`, while the separate Native Village Stockpile remained on `NVZone`.
 
 ## Tracker Risk Hunt
 
