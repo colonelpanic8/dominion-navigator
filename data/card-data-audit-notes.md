@@ -99,6 +99,7 @@ Use this section as the quick source of truth before choosing the next card to t
 - Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`.
 - Player-to-player transfer: `Masquerade`.
 - Possession/control: `Possession`.
+- Replay-and-trash / replay-with-gain cards: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, `Royal Carriage`. `Procession` is especially suspicious because the selected Action is played twice, then trashed, then replaced by a gained Action costing exactly one more.
 
 ### Stress Kingdom 1
 
