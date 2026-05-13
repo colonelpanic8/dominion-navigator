@@ -96,12 +96,37 @@ shadow.innerHTML = `
       box-shadow: 0 10px 28px rgba(0,0,0,.35);
       border-radius: 6px;
     }
+    .panel.collapsed {
+      right: 0;
+      width: auto;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      border-right: 0;
+      border-radius: 6px 0 0 6px;
+    }
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
       margin-bottom: 8px;
+    }
+    .panel.collapsed .header {
+      margin-bottom: 0;
+    }
+    .panel.collapsed .title,
+    .panel.collapsed #refresh {
+      display: none;
+    }
+    .panel.collapsed #toggle {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      border-width: 0 0 0 1px;
+      border-radius: 6px 0 0 6px;
+      background: rgba(15, 18, 22, .94);
+      box-shadow: 0 6px 18px rgba(0,0,0,.32);
     }
     .title {
       font-weight: 700;
@@ -228,15 +253,15 @@ shadow.innerHTML = `
     }
     .hidden { display: none; }
   </style>
-  <div class="panel">
+  <div class="panel collapsed">
     <div class="header">
       <div class="title">Dominion Navigator</div>
       <div>
         <button id="refresh" title="Refresh snapshot">↻</button>
-        <button id="toggle" title="Collapse">−</button>
+        <button id="toggle" title="Open navigator">+</button>
       </div>
     </div>
-    <div id="body">
+    <div id="body" class="hidden">
       <div class="meta" id="meta">Waiting for game model...</div>
       <label class="setting" title="Allow visible zone evidence to identify anonymous owned cards.">
         <span>Identity repair</span>
@@ -259,6 +284,7 @@ shadow.innerHTML = `
 `;
 
 const bodyElement = shadow.querySelector<HTMLElement>("#body")!;
+const panelElement = shadow.querySelector<HTMLElement>(".panel")!;
 const metaElement = shadow.querySelector<HTMLElement>("#meta")!;
 const zonesElement = shadow.querySelector<HTMLElement>("#zones")!;
 const movesElement = shadow.querySelector<HTMLElement>("#moves")!;
@@ -269,8 +295,10 @@ const refreshButton = shadow.querySelector<HTMLButtonElement>("#refresh")!;
 const identityRepairInput = shadow.querySelector<HTMLInputElement>("#identity-repair")!;
 
 toggleButton.addEventListener("click", () => {
-  bodyElement.classList.toggle("hidden");
-  toggleButton.textContent = bodyElement.classList.contains("hidden") ? "+" : "-";
+  const isCollapsed = panelElement.classList.toggle("collapsed");
+  bodyElement.classList.toggle("hidden", isCollapsed);
+  toggleButton.textContent = isCollapsed ? "+" : "-";
+  toggleButton.title = isCollapsed ? "Open navigator" : "Collapse navigator";
 });
 
 refreshButton.addEventListener("click", requestSnapshot);
