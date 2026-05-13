@@ -120,6 +120,7 @@ export type ContentCommand =
       type: "show-draw-knowledge-window";
       payload: {
         sourceZoneIndex: number;
+        playerName: string;
         cards: KnowledgeWindowCardSummary[];
         unknownCount: number;
         discardPile?: {

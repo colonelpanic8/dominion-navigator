@@ -673,7 +673,7 @@ function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-
 
   const sourceZone = game.state.zones?.[payload.sourceZoneIndex] ?? game.state.zones?.find((zone) => zone?.zoneName === "DrawZone");
   if (!sourceZone) {
-    status(false, "Unable to find a draw pile in the Dominion runtime.");
+    status(false, "Unable to find the source pile in the Dominion runtime.");
     return;
   }
 
@@ -692,7 +692,7 @@ function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-
   header.className = "dn-header";
 
   const title = document.createElement("div");
-  title.textContent = "Draw Pile View";
+  title.textContent = `${payload.playerName} Card Details`;
 
   const close = document.createElement("button");
   close.className = "dn-close";

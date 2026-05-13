@@ -744,9 +744,9 @@ function boundsContainPoint(bounds: NonNullable<ZoneDetail["stacks"][number]["bo
   return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
 }
 
-function clickedDrawZone(snapshot: NavigatorSnapshot, x: number, y: number): ZoneDetail | undefined {
+function clickedKnowledgeZone(snapshot: NavigatorSnapshot, x: number, y: number): ZoneDetail | undefined {
   const hits = snapshot.playerZones
-    .filter((zone) => zone.zoneName === "DrawZone")
+    .filter((zone) => zone.zoneName === "DrawZone" || zone.zoneName === "DiscardZone")
     .flatMap((zone) =>
       zone.stacks
         .filter((stack) => stack.bounds && boundsContainPoint(stack.bounds, x, y))
@@ -832,17 +832,30 @@ function knowledgeWindowCardsForZone(zone: ZoneDetail, summary: KnowledgeSummary
   return trackedKnowledgeWindowCards(trackedZone, player);
 }
 
-function relatedZoneForDrawPile(snapshot: NavigatorSnapshot | undefined, drawZone: ZoneDetail, zoneName: string): ZoneDetail | undefined {
+function relatedPlayerZone(snapshot: NavigatorSnapshot | undefined, sourceZone: ZoneDetail, zoneName: string): ZoneDetail | undefined {
   return snapshot?.playerZones
-    .filter((zone) => zone.zoneName === zoneName && samePlayer(zone.owner, drawZone.owner))
+    .filter((zone) => zone.zoneName === zoneName && samePlayer(zone.owner, sourceZone.owner))
     .sort((a, b) => b.cardCount - a.cardCount || a.index - b.index)[0];
 }
 
-function discardKnowledgeWindowCards(drawZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const rawDiscardZone = relatedZoneForDrawPile(latestSnapshot, drawZone, "DiscardZone");
+function drawKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const rawDrawZone = relatedPlayerZone(latestSnapshot, sourceZone, "DrawZone");
+  if (rawDrawZone) return knowledgeWindowCardsForZone(rawDrawZone, summary);
+
+  const player = knowledgeForZone(summary, sourceZone);
+  const trackedDrawZone = player?.zones
+    .filter((zone) => zone.zoneName === "DrawZone")
+    .sort((a, b) => b.totalCount - a.totalCount || a.zoneKey.localeCompare(b.zoneKey))[0];
+  if (trackedDrawZone) return trackedKnowledgeWindowCards(trackedDrawZone, player);
+
+  return { cards: [], unknownCount: 0 };
+}
+
+function discardKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const rawDiscardZone = relatedPlayerZone(latestSnapshot, sourceZone, "DiscardZone");
   if (rawDiscardZone) return knowledgeWindowCardsForZone(rawDiscardZone, summary);
 
-  const player = knowledgeForZone(summary, drawZone);
+  const player = knowledgeForZone(summary, sourceZone);
   const trackedDiscardZone = player?.zones
     .filter((zone) => zone.zoneName === "DiscardZone")
     .sort((a, b) => b.totalCount - a.totalCount || a.zoneKey.localeCompare(b.zoneKey))[0];
@@ -851,8 +864,8 @@ function discardKnowledgeWindowCards(drawZone: ZoneDetail, summary: KnowledgeSum
   return { cards: [], unknownCount: 0 };
 }
 
-function entireDeckKnowledgeWindowCards(drawZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const player = knowledgeForZone(summary, drawZone);
+function entireDeckKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const player = knowledgeForZone(summary, sourceZone);
   if (!player) return { cards: [], unknownCount: 0 };
   return {
     cards: counterToWindowCards(player.totalKnownOwned),
@@ -868,12 +881,13 @@ function heroDrawZone(snapshot: NavigatorSnapshot): ZoneDetail | undefined {
 
 function showDrawKnowledgeWindow(zone: ZoneDetail): void {
   const summary = tracker.summary();
-  const { cards, unknownCount } = knowledgeWindowCardsForZone(zone, summary);
+  const { cards, unknownCount } = drawKnowledgeWindowCards(zone, summary);
   const command: ContentCommand = {
     source: MESSAGE_SOURCE,
     type: "show-draw-knowledge-window",
     payload: {
       sourceZoneIndex: zone.index,
+      playerName: playerDisplayName(zone.owner),
       cards,
       unknownCount,
       discardPile: discardKnowledgeWindowCards(zone, summary),
@@ -904,7 +918,7 @@ function handleDocumentClick(event: MouseEvent): void {
   if (event.button !== 0) return;
   if (event.composedPath().includes(root)) return;
 
-  const zone = latestSnapshot ? clickedDrawZone(latestSnapshot, event.clientX, event.clientY) : undefined;
+  const zone = latestSnapshot ? clickedKnowledgeZone(latestSnapshot, event.clientX, event.clientY) : undefined;
   if (!zone) return;
 
   event.preventDefault();
