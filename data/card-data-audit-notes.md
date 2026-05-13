@@ -83,6 +83,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Card | Evidence | Remaining work |
 | --- | --- | --- |
 | Vassal | Bought successfully in custom kingdom; supply count dropped. | Need play-effect verification. |
+| Graverobber | Bought in stress kingdom 2 on turn 14 after Black Market + treasures produced enough coins. | Need play-effect verification for gain-from-trash-to-deck and trash-from-hand replacement. |
 | Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine | Included in early custom kingdoms or audit setup. | Need actual effect playthroughs and tracker checks. |
 
 ### High-Risk Still Worth Prioritizing
@@ -171,6 +172,7 @@ Initial observations:
 - Turn 11: played `Black Market`, played two Coppers in the Black Market prompt, gained revealed Gardens, and bottom-decked Pirate plus Imperial Envoy without adding them to ownership.
 - Turn 12/13: played `Church`, set aside Changeling and Estate, then next turn returned both and trashed the Estate with Church.
 - Turn 13: played `Cage`, set aside Changeling and Silver, bought Estate, then Cage trashed itself and immediately returned the set-aside cards to hand.
+- Turn 14: bought `Graverobber`; this is setup only until Graverobber is drawn and played.
 
 ## Tracker Risk Hunt
 
