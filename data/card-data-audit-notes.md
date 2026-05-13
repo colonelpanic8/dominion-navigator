@@ -211,7 +211,7 @@ Initial observations:
 
 The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 366 `must-check` keys out of 806 tracker candidates.
 
-The most suspicious current tracker assumption is in ownership handling for moves from unowned zones into player-controlled zones. `DeckKnowledgeTracker.applyMove` treats any move from a non-player-owned zone into a player-owned zone as a gain and adds the moved card to that player's owned-card ledger. That is correct for normal gains, but likely wrong for effects that play a card from the trash or Supply while explicitly leaving it there.
+An earlier suspicious tracker assumption was ownership handling for moves from unowned zones into player-controlled zones. That has a focused guard now: `DeckKnowledgeTracker.applyMove` treats `InPlayZone` as a controlled-only destination, so a card played from the trash or Supply into a player's in-play area does not automatically enter that player's owned-card ledger. Normal gains to hand, discard, deck, exile, or set-aside zones still add ownership.
 
 High-risk `must-check` bucket:
 
@@ -225,22 +225,21 @@ Likely affected examples:
 - `BAND_OF_MISFITS`, `OVERLORD`, `CAPTAIN`: play a non-Duration Action from the Supply, leaving it there.
 - `RIVERBOAT`, `WAY_OF_THE_MOUSE`, `INHERITANCE`: play a set-aside Supply card while leaving it set aside.
 
-Synthetic tracker break:
+Synthetic tracker regression:
 
 1. Start with the hero owning only `Necromancer` in `InPlayZone`.
 2. Apply a card-move from unowned `TrashZone` to hero `InPlayZone` for `Zombie Apprentice`.
-3. The current summary reports:
+3. The summary should keep `Zombie Apprentice` out of `totalKnownOwned` while still showing it in `InPlayZone` if Dominion ever emits such a move.
 
 ```json
 {
   "totalKnownOwned": {
-    "Necromancer": 1,
-    "Zombie Apprentice": 1
+    "Necromancer": 1
   }
 }
 ```
 
-That is probably wrong for Dominion deck ownership: the Zombie is controlled/in play for the turn, but was not gained and should not enter the player's owned deck. A correct fix probably needs to distinguish cards controlled in a player zone from cards actually owned by that player. A simple "never add unowned -> InPlayZone" rule would avoid Necromancer, but could undercount true gain-and-play effects such as `INNOVATION`, `CONTINUE`, `INVASION`, `MINING_ROAD`, `RUSH`, or `SAILOR`.
+This covers the ownership distinction for non-owned cards controlled in play. Remaining high-risk cases are effects where a gained card moves to a non-discard destination (`Summon`, `Deliver`, `Hasty`, `Rapid Expansion`, `Blockade`) or where control changes whose deck receives gains or trashed-card returns (`Possession`).
 
 Browser follow-up in game `#178442728`: after the hero played `Necromancer` and chose `Zombie Apprentice`, Dominion Online logged `c plays a Zombie Apprentice.` but did not emit a `TrashZone -> InPlayZone` card move for the Zombie. The Zombie stayed in the neutral trash zone in the client model, so the live overlay continued to show the hero owning only `7 Copper, 3 Estate, 1 Necromancer` and the hero `InPlayZone` containing only `Necromancer`. The synthetic regression still guards the tracker against equivalent client events from other play-from-unowned-source cards.
 
