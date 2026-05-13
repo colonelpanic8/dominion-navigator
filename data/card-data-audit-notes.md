@@ -77,6 +77,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Procession + Fortress trash replacement | `#178452110` | Played Procession, selected Fortress, saw Fortress play twice, then Procession trashed it and Fortress replaced the trash by moving to hand. | Tracker showed `Fortress · your InPlayZone -> TrashZone -> your HandZone`; known ownership retained Fortress and placed one copy in hand. | No dedicated test; exact-cost Procession gain still pending. |
 | Procession + Village trash | `#178452253` | Played Procession, selected Village, saw Village play twice and then move from play to trash. | Tracker showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one. | No dedicated test; exact-cost Procession gain still pending. |
 | Travelling Fair topdeck gain | `#178452454` | Bought Travelling Fair, bought and gained Silver, then chose `Topdeck`. Dominion logged `topdecks a Silver with Travelling Fair` after an anonymous discard-to-draw move. | Found and fixed parser bug: the tracker initially treated `Silver with Travelling Fair` as a bogus card name. Topdeck logs now strip source suffixes before parsing card names. | Yes. |
+| Captain + Village | `#178452940` | Played owned Captain, selected Supply Village immediately, then selected Supply Village again from Captain's next-turn duration prompt. | Tracker kept ownership at `7 Copper, 5 Silver, 3 Estate, 1 Captain`; Supply Village was not added to owned cards or in-play ownership. Captain remained tracked in `InPlayZone` across the delayed prompt. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -96,7 +97,7 @@ Use this section as the quick source of truth before choosing the next card to t
 
 ### High-Risk Still Worth Prioritizing
 
-- Play-from-Supply Command cards: `Band Of Misfits`, `Overlord`, `Captain`.
+- Play-from-Supply Command cards: `Overlord` remains unchecked. `Band Of Misfits` and `Captain` have browser coverage for leaving the Supply card unowned.
 - Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
 - Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
 - Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
@@ -226,6 +227,26 @@ Initial observations:
 - Game `#178452454`: bought `Travelling Fair`, bought and gained `Silver`, then clicked the `Topdeck` prompt. Dominion logged `c topdecks a Silver with Travelling Fair.`
 - The card move was an anonymous `DiscardZone -> DrawZone` move following the Silver gain. The tracker relies on the topdeck log to recover the identity.
 - Bug found: the topdeck log parser treated `Silver with Travelling Fair` as the card name, producing bogus ownership and draw-zone entries. Fixed by parsing topdeck logs separately and stripping trailing source suffixes before card-list parsing.
+
+### Candidate Stress Kingdom 5
+
+The next focused browser target was `Captain`, because it is both a Duration and a Command: it plays a Supply Action now and again at the start of the next turn, while leaving that Supply card in the pile.
+
+```text
+Captain, Village, Smithy, Workshop, Remodel, Merchant, Market, Festival, Laboratory, Mine
+```
+
+Coverage intent:
+
+- `Captain`: verify that playing a Supply Action does not add the Supply card to the hero's owned-card ledger.
+- `Captain` duration prompt: verify that the next-turn replay of a Supply Action also stays unowned and does not displace the owned Captain's delayed in-play tracking.
+
+Initial observations:
+
+- Game `#178452940`: bought `Captain`, played it on turn 7, selected Supply `Village`, then selected Supply `Village` again at the start of turn 8.
+- Dominion logged `c plays a Captain.`, `c plays a Village.`, then next turn `c plays a Village. (Captain)`.
+- The navigator overlay kept hero ownership at `7 Copper, 5 Silver, 3 Estate, 1 Captain`. It did not add any owned `Village` from either the immediate Command play or the next-turn Duration play.
+- The owned `Captain` stayed tracked in `InPlayZone` while the next-turn prompt resolved.
 
 ## Tracker Risk Hunt
 
