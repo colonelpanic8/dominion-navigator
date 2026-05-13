@@ -71,6 +71,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Black Market buy | `#178450013` | Played Black Market, played two Coppers during the Black Market prompt, bought revealed Gardens, and bottom-decked Pirate/Imperial Envoy. | Tracker added Gardens to hero ownership/discard and returned only the unbought Black Market deck cards to the neutral set-aside deck. | No dedicated test; browser behavior looked correct. |
 | Church | `#178450013` | Played Church, set aside Changeling and Estate, observed next-turn return, then trashed Estate with Church. | Tracker held the set-aside cards under a separate Church SetAsideZone, returned both to hand next turn, and removed the trashed Estate from ownership. | No dedicated test; browser behavior looked correct. |
 | Cage + Victory trigger | `#178450013` | Played Cage, set aside Changeling and Silver, bought Estate, then resolved Cage's self-trash and immediate return. | Tracker moved Cage out of ownership, returned Silver and Changeling to hand, and kept the gained Estate in discard. | No dedicated test; browser behavior looked correct. |
+| Graverobber gain from trash | `#178450013` | Trashed Black Market with Church, then played Graverobber and gained Changeling from the trash onto the draw pile. | Tracker showed `Changeling · TrashZone -> your DrawZone` and added the gained Changeling to hero ownership. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -83,7 +84,6 @@ Use this section as the quick source of truth before choosing the next card to t
 | Card | Evidence | Remaining work |
 | --- | --- | --- |
 | Vassal | Bought successfully in custom kingdom; supply count dropped. | Need play-effect verification. |
-| Graverobber | Bought in stress kingdom 2 on turn 14 after Black Market + treasures produced enough coins. | Need play-effect verification for gain-from-trash-to-deck and trash-from-hand replacement. |
 | Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine | Included in early custom kingdoms or audit setup. | Need actual effect playthroughs and tracker checks. |
 
 ### High-Risk Still Worth Prioritizing
@@ -173,6 +173,7 @@ Initial observations:
 - Turn 12/13: played `Church`, set aside Changeling and Estate, then next turn returned both and trashed the Estate with Church.
 - Turn 13: played `Cage`, set aside Changeling and Silver, bought Estate, then Cage trashed itself and immediately returned the set-aside cards to hand.
 - Turn 14: bought `Graverobber`; this is setup only until Graverobber is drawn and played.
+- Turn 17: used Church to trash Black Market, then played `Graverobber` and gained Changeling from the trash onto the draw pile. The direct client method selected the first trash option, so this verified Graverobber's trash-to-deck movement with Changeling rather than Black Market.
 
 ## Tracker Risk Hunt
 
