@@ -51,12 +51,14 @@ Use this section as the quick source of truth before choosing the next card to t
 | Sentry | `#178429682` | Revealed Copper/Silver, then topdecked them with after-move identities anonymized. | Kept known topdeck identities through anonymous draw-pile snapshot. | Yes. |
 | Ambassador | `#178441615` | Revealed Copper, returned 2 Coppers to Supply, opponent gained separate Copper. | Removed returned Coppers from hero ownership and added opponent-gained Copper separately. | Yes. |
 | Lurker + Fortress | `#178448747` | Lurker trashed Fortress from Supply; Fortress replacement put it into hero hand. | Hero ended with `2 Fortress` in `HandZone`; recent moves showed `SetAsideZone -> TrashZone -> HandZone`. | No dedicated test; browser behavior looked correct. |
+| Messenger | `#178449122` | Played Messenger and chose `Discard` for `put your deck into your discard pile`. | Hero `DrawZone` became empty and `DiscardZone` kept the known identities `3 Copper, 2 Estate, 1 Experiment, 1 Native Village`. | Yes. |
+| Experiment | `#178449122` | Bought one Experiment, gained the paired copy, then played Experiment and returned it to its pile. | Owned ledger moved from `2 Experiment` to `1 Experiment`; recent move showed `Experiment · your InPlayZone -> SetAsideZone`. | No dedicated return-to-pile test yet. |
 
 ### Synthetic Regression Covered, Browser Pending
 
 | Card / combo | Behavior covered | Remaining work |
 | --- | --- | --- |
-| Messenger | `put your deck into your discard pile` should preserve known draw-pile identities when the following discard snapshot is only partial/top-card-only. | Needs live browser verification of Dominion's actual card-move and snapshot sequence. |
+| Messenger | `put your deck into your discard pile` should preserve known draw-pile identities when the following discard snapshot is only partial/top-card-only. | Live browser verification completed in `#178449122`; keep regression. |
 
 ### Partial / Setup Only
 
@@ -74,6 +76,34 @@ Use this section as the quick source of truth before choosing the next card to t
 - Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`.
 - Player-to-player transfer: `Masquerade`.
 - Possession/control: `Possession`.
+
+### Stress Kingdom 1
+
+Game `#178449122` uses a deliberately difficult ten-card kingdom:
+
+```text
+Masquerade, Messenger, Native Village, Island, Bounty Hunter, Stockpile, Duplicate, Band Of Misfits, Experiment, Cargo Ship
+```
+
+Coverage intent:
+
+- `Masquerade`: direct player-to-player card transfer plus optional trash.
+- `Messenger`: whole draw pile to discard; first-gain distributes a matching card to every player.
+- `Native Village`: face-down persistent mat, later moving all mat cards into hand.
+- `Island`: persistent mat that removes itself and another card from the deck.
+- `Bounty Hunter`: Exile from hand.
+- `Stockpile`: Treasure that exiles itself from play.
+- `Duplicate`: Reserve/Tavern mat, then called on a gain to create another gain.
+- `Band Of Misfits`: plays a Supply card while leaving it there.
+- `Experiment`: gain-chain plus return-to-pile on play.
+- `Cargo Ship`: gain-to-set-aside, then next-turn hand.
+
+Initial observations:
+
+- Turn 1: buying `Experiment` gained the second `Experiment`; tracker showed `2 Experiment` in hero ownership/discard.
+- Turn 2: buying `Messenger` opened the distribute prompt; choosing `Native Village` correctly added one `Native Village` to each player's owned ledger.
+- Turn 3: playing `Experiment` drew two Coppers, then returned `Experiment` to the pile; tracker removed one Experiment from hero ownership.
+- Turn 3: playing `Messenger` and choosing `Discard` moved the deck into discard; tracker preserved the known draw identities in `DiscardZone`.
 
 ## Tracker Risk Hunt
 
