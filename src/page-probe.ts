@@ -510,6 +510,16 @@ function installKnowledgeModalStyle(root: HTMLElement): void {
       overflow: auto;
       padding: 16px;
     }
+    #${KNOWLEDGE_MODAL_ID} .dn-section + .dn-section {
+      margin-top: 20px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(211, 185, 119, .35);
+    }
+    #${KNOWLEDGE_MODAL_ID} .dn-section-title {
+      margin-bottom: 10px;
+      color: rgba(245, 241, 232, .92);
+      font-weight: 700;
+    }
     #${KNOWLEDGE_MODAL_ID} .dn-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
@@ -616,6 +626,44 @@ function handleKnowledgeModalKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") closeKnowledgeWindow();
 }
 
+function knowledgePileTotal(pile: { cards: KnowledgeWindowCardSummary[]; unknownCount: number }): number {
+  return pile.cards.reduce((sum, item) => sum + Math.max(0, item.count), 0) + Math.max(0, pile.unknownCount);
+}
+
+function appendKnowledgePileSection(
+  body: HTMLElement,
+  game: RuntimeGame,
+  sourceZone: RuntimeZone,
+  titleText: string,
+  pile: { cards: KnowledgeWindowCardSummary[]; unknownCount: number },
+  emptyText: string
+): void {
+  const section = document.createElement("section");
+  section.className = "dn-section";
+
+  const sectionTitle = document.createElement("div");
+  sectionTitle.className = "dn-section-title";
+  sectionTitle.textContent = `${titleText} (${knowledgePileTotal(pile)})`;
+
+  const grid = document.createElement("div");
+  grid.className = "dn-grid";
+  for (const item of pile.cards) {
+    if (item.count <= 0) continue;
+    grid.append(makeKnowledgeModalCardTile(game, sourceZone, item.name, item.count));
+  }
+  if (pile.unknownCount > 0) grid.append(makeKnowledgeModalCardTile(game, sourceZone, "Unknown", pile.unknownCount));
+
+  if (grid.childElementCount === 0) {
+    const empty = document.createElement("div");
+    empty.className = "dn-empty";
+    empty.textContent = emptyText;
+    grid.append(empty);
+  }
+
+  section.append(sectionTitle, grid);
+  body.append(section);
+}
+
 function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-draw-knowledge-window" }>["payload"]): void {
   const game = getGame();
   if (!game?.state) {
@@ -644,9 +692,7 @@ function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-
   header.className = "dn-header";
 
   const title = document.createElement("div");
-  const knownCount = payload.cards.reduce((sum, item) => sum + Math.max(0, item.count), 0);
-  const totalCount = knownCount + Math.max(0, payload.unknownCount);
-  title.textContent = `Your Draw Pile (${totalCount})`;
+  title.textContent = "Draw Pile View";
 
   const close = document.createElement("button");
   close.className = "dn-close";
@@ -658,22 +704,30 @@ function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-
   const body = document.createElement("div");
   body.className = "dn-body";
 
-  const grid = document.createElement("div");
-  grid.className = "dn-grid";
-  for (const item of payload.cards) {
-    if (item.count <= 0) continue;
-    grid.append(makeKnowledgeModalCardTile(game, sourceZone, item.name, item.count));
-  }
-  if (payload.unknownCount > 0) grid.append(makeKnowledgeModalCardTile(game, sourceZone, "Unknown", payload.unknownCount));
-
-  if (grid.childElementCount === 0) {
-    const empty = document.createElement("div");
-    empty.className = "dn-empty";
-    empty.textContent = "No draw pile cards are currently tracked.";
-    grid.append(empty);
-  }
-
-  body.append(grid);
+  appendKnowledgePileSection(
+    body,
+    game,
+    sourceZone,
+    "Draw Pile",
+    { cards: payload.cards, unknownCount: payload.unknownCount },
+    "No draw pile cards are currently tracked."
+  );
+  appendKnowledgePileSection(
+    body,
+    game,
+    sourceZone,
+    "Discard Pile",
+    payload.discardPile ?? { cards: [], unknownCount: 0 },
+    "No discard pile cards are currently tracked."
+  );
+  appendKnowledgePileSection(
+    body,
+    game,
+    sourceZone,
+    "Entire Deck",
+    payload.entireDeck ?? { cards: [], unknownCount: 0 },
+    "No full-deck totals are currently tracked."
+  );
   dialog.append(header, body);
   modal.append(dialog);
   modal.addEventListener("click", (event) => {

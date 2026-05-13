@@ -122,5 +122,13 @@ export type ContentCommand =
         sourceZoneIndex: number;
         cards: KnowledgeWindowCardSummary[];
         unknownCount: number;
+        discardPile?: {
+          cards: KnowledgeWindowCardSummary[];
+          unknownCount: number;
+        };
+        entireDeck?: {
+          cards: KnowledgeWindowCardSummary[];
+          unknownCount: number;
+        };
       };
     };

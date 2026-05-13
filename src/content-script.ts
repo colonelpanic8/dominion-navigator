@@ -744,6 +744,11 @@ function counterToWindowCards(counter: CardCounter): KnowledgeWindowCardSummary[
     .map(([name, count]) => ({ name, count }));
 }
 
+type KnowledgeWindowPileSummary = {
+  cards: KnowledgeWindowCardSummary[];
+  unknownCount: number;
+};
+
 function rawUnknownCount(zone: ZoneDetail): number {
   return zone.stacks.reduce((total, stack) => total + stack.anonymousCards, 0);
 }
@@ -756,20 +761,13 @@ function visibleCardCounter(zone: ZoneDetail): CardCounter {
   return counter;
 }
 
-function drawKnowledgeWindowCards(zone: ZoneDetail, summary: KnowledgeSummary): { cards: KnowledgeWindowCardSummary[]; unknownCount: number } {
-  const player = knowledgeForZone(summary, zone);
-  const key = zoneDetailKey(zone);
-  const trackedZone = player?.zones.find((item) => item.zoneKey === key);
-  if (!trackedZone) {
-    return {
-      cards: counterToWindowCards(visibleCardCounter(zone)),
-      unknownCount: rawUnknownCount(zone)
-    };
-  }
-
+function trackedKnowledgeWindowCards(
+  trackedZone: ZoneKnowledge,
+  player: PlayerDeckKnowledge | undefined
+): KnowledgeWindowPileSummary {
   const exactCards = counterToWindowCards(trackedZone.knownCards);
-  const candidateGroup = player?.locationCandidateGroups.find((group) => group.zoneKeys.includes(key));
-  const ambiguousGroup = player?.ambiguousLocationGroups.find((group) => group.zoneKeys.includes(key));
+  const candidateGroup = player?.locationCandidateGroups.find((group) => group.zoneKeys.includes(trackedZone.zoneKey));
+  const ambiguousGroup = player?.ambiguousLocationGroups.find((group) => group.zoneKeys.includes(trackedZone.zoneKey));
   const candidateCards = counterToWindowCards(candidateGroup?.knownCards ?? ambiguousGroup?.knownCards ?? {});
 
   if (exactCards.length > 0) {
@@ -792,6 +790,48 @@ function drawKnowledgeWindowCards(zone: ZoneDetail, summary: KnowledgeSummary): 
   };
 }
 
+function knowledgeWindowCardsForZone(zone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const player = knowledgeForZone(summary, zone);
+  const key = zoneDetailKey(zone);
+  const trackedZone = player?.zones.find((item) => item.zoneKey === key);
+  if (!trackedZone) {
+    return {
+      cards: counterToWindowCards(visibleCardCounter(zone)),
+      unknownCount: rawUnknownCount(zone)
+    };
+  }
+
+  return trackedKnowledgeWindowCards(trackedZone, player);
+}
+
+function relatedZoneForDrawPile(snapshot: NavigatorSnapshot | undefined, drawZone: ZoneDetail, zoneName: string): ZoneDetail | undefined {
+  return snapshot?.playerZones
+    .filter((zone) => zone.zoneName === zoneName && samePlayer(zone.owner, drawZone.owner))
+    .sort((a, b) => b.cardCount - a.cardCount || a.index - b.index)[0];
+}
+
+function discardKnowledgeWindowCards(drawZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const rawDiscardZone = relatedZoneForDrawPile(latestSnapshot, drawZone, "DiscardZone");
+  if (rawDiscardZone) return knowledgeWindowCardsForZone(rawDiscardZone, summary);
+
+  const player = knowledgeForZone(summary, drawZone);
+  const trackedDiscardZone = player?.zones
+    .filter((zone) => zone.zoneName === "DiscardZone")
+    .sort((a, b) => b.totalCount - a.totalCount || a.zoneKey.localeCompare(b.zoneKey))[0];
+  if (trackedDiscardZone) return trackedKnowledgeWindowCards(trackedDiscardZone, player);
+
+  return { cards: [], unknownCount: 0 };
+}
+
+function entireDeckKnowledgeWindowCards(drawZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const player = knowledgeForZone(summary, drawZone);
+  if (!player) return { cards: [], unknownCount: 0 };
+  return {
+    cards: counterToWindowCards(player.totalKnownOwned),
+    unknownCount: player.totalUnknownOwned
+  };
+}
+
 function heroDrawZone(snapshot: NavigatorSnapshot): ZoneDetail | undefined {
   return snapshot.heroZones
     .filter((zone) => zone.zoneName === "DrawZone")
@@ -799,14 +839,17 @@ function heroDrawZone(snapshot: NavigatorSnapshot): ZoneDetail | undefined {
 }
 
 function showDrawKnowledgeWindow(zone: ZoneDetail): void {
-  const { cards, unknownCount } = drawKnowledgeWindowCards(zone, tracker.summary());
+  const summary = tracker.summary();
+  const { cards, unknownCount } = knowledgeWindowCardsForZone(zone, summary);
   const command: ContentCommand = {
     source: MESSAGE_SOURCE,
     type: "show-draw-knowledge-window",
     payload: {
       sourceZoneIndex: zone.index,
       cards,
-      unknownCount
+      unknownCount,
+      discardPile: discardKnowledgeWindowCards(zone, summary),
+      entireDeck: entireDeckKnowledgeWindowCards(zone, summary)
     }
   };
   window.postMessage(command, window.location.origin);
