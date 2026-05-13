@@ -225,8 +225,20 @@ function isControlledOnlyDestination(zone: ZoneSummary | undefined): boolean {
 
 export class DeckKnowledgeTracker {
   private readonly players = new Map<string, MutablePlayerKnowledge>();
+  private locationIdentityRepairEnabled = false;
   private initialized = false;
   private gameInstanceId: string | undefined;
+
+  setLocationIdentityRepairEnabled(enabled: boolean): void {
+    this.locationIdentityRepairEnabled = enabled;
+    if (enabled) {
+      for (const player of this.players.values()) this.reconcileKnownOwnedFromLocated(player);
+    }
+  }
+
+  isLocationIdentityRepairEnabled(): boolean {
+    return this.locationIdentityRepairEnabled;
+  }
 
   applySnapshot(snapshot: NavigatorSnapshot): void {
     if (!this.initialized || this.gameInstanceId !== snapshot.gameInstanceId) {
@@ -549,6 +561,11 @@ export class DeckKnowledgeTracker {
   }
 
   private reconcileKnownOwnedFromLocated(player: MutablePlayerKnowledge): void {
+    if (!this.locationIdentityRepairEnabled) {
+      this.updateConfidence(player);
+      return;
+    }
+
     const locatedKnown = new Map<string, number>();
     for (const zone of player.zones.values()) addCounter(locatedKnown, zone.knownCards);
 

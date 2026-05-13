@@ -284,8 +284,9 @@ test("draw zone identities are not derived when the owned ledger is incomplete",
   assert.equal(draw?.unknownCount, 3);
 });
 
-test("same-owner revealed move converts unknown ownership to known ownership", () => {
+test("same-owner revealed move converts unknown ownership to known ownership when identity repair is enabled", () => {
   const tracker = new DeckKnowledgeTracker();
+  tracker.setLocationIdentityRepairEnabled(true);
   tracker.applySnapshot(
     snapshot([
       zone(1, "DrawZone", [], 1),
@@ -355,8 +356,22 @@ test("authoritative named move preserves another known copy when owned ledger al
   assert.deepEqual(knowledge?.totalKnownOwned, { Silver: 2 });
 });
 
-test("snapshot reveal converts unknown ownership to known ownership", () => {
+test("location identity repair is disabled by default", () => {
   const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));
+  tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Silver"])]));
+
+  const [knowledge] = tracker.summary().players;
+  const hand = knowledge?.zones.find((item) => item.zoneName === "HandZone");
+
+  assert.deepEqual(hand?.knownCards, { Silver: 1 });
+  assert.deepEqual(knowledge?.totalKnownOwned, {});
+  assert.equal(knowledge?.totalUnknownOwned, 1);
+});
+
+test("snapshot reveal converts unknown ownership to known ownership when identity repair is enabled", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.setLocationIdentityRepairEnabled(true);
   tracker.applySnapshot(snapshot([zone(1, "HandZone", [], 1)]));
   tracker.applySnapshot(snapshot([zone(1, "HandZone", ["Silver"])]));
 
@@ -621,8 +636,9 @@ test("exact revealed hand log removes stale known cards from hand", () => {
   assert.equal(opponentKnowledge?.unlocatedKnownCards.Moat, 1);
 });
 
-test("marking the final unknown card updates confidence to observed", () => {
+test("marking the final unknown card updates confidence to observed when identity repair is enabled", () => {
   const tracker = new DeckKnowledgeTracker();
+  tracker.setLocationIdentityRepairEnabled(true);
   tracker.applySnapshot(snapshot([zone(1, "DrawZone", [], 1)]));
 
   assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Silver"), true);

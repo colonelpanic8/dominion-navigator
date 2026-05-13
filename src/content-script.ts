@@ -62,7 +62,7 @@ let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
 let logObserverReady = false;
 
-const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v1:";
+const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v3:";
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 const LOG_LINE_RETRY_MS = 5000;
 
@@ -118,6 +118,20 @@ shadow.innerHTML = `
       font-weight: 700;
     }
     button:hover { background: rgba(255,255,255,.16); }
+    .setting {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: #dce2ea;
+    }
+    .setting input {
+      accent-color: #8fb8ff;
+      width: 14px;
+      height: 14px;
+      margin: 0;
+    }
     .meta {
       color: #b9c0c9;
       margin-bottom: 8px;
@@ -196,6 +210,10 @@ shadow.innerHTML = `
     </div>
     <div id="body">
       <div class="meta" id="meta">Waiting for game model...</div>
+      <label class="setting" title="Allow visible zone evidence to identify anonymous owned cards.">
+        <span>Identity repair</span>
+        <input id="identity-repair" type="checkbox" />
+      </label>
       <div class="knowledge">
         <div class="zone-title"><span>Knowledge Model</span></div>
         <div id="knowledge"><span class="muted">No deck knowledge yet.</span></div>
@@ -216,6 +234,7 @@ const movesElement = shadow.querySelector<HTMLElement>("#moves")!;
 const knowledgeElement = shadow.querySelector<HTMLElement>("#knowledge")!;
 const toggleButton = shadow.querySelector<HTMLButtonElement>("#toggle")!;
 const refreshButton = shadow.querySelector<HTMLButtonElement>("#refresh")!;
+const identityRepairInput = shadow.querySelector<HTMLInputElement>("#identity-repair")!;
 
 toggleButton.addEventListener("click", () => {
   bodyElement.classList.toggle("hidden");
@@ -223,6 +242,15 @@ toggleButton.addEventListener("click", () => {
 });
 
 refreshButton.addEventListener("click", requestSnapshot);
+
+identityRepairInput.checked = tracker.isLocationIdentityRepairEnabled();
+identityRepairInput.addEventListener("change", () => {
+  tracker.setLocationIdentityRepairEnabled(identityRepairInput.checked);
+  const summary = tracker.summary();
+  renderKnowledge(summary);
+  if (latestSnapshot) renderZones(summary, latestSnapshot);
+  if (latestSnapshot) persistState(latestSnapshot);
+});
 
 function requestSnapshot(): void {
   const command: ContentCommand = {
