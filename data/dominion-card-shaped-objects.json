@@ -11805,7 +11805,7 @@
   ],
   "trackerAudit": {
     "schemaVersion": 2,
-    "generatedAt": "2026-05-12T05:45:52.485Z",
+    "generatedAt": "2026-05-13T00:21:29.930Z",
     "candidateCount": 806,
     "contract": {
       "cardKeyField": "cardShapedObjects[].key",
@@ -53945,7 +53945,7 @@
     },
     "behaviorReview": {
       "reviewVersion": 1,
-      "generatedAt": "2026-05-12T05:45:52.485Z",
+      "generatedAt": "2026-05-13T00:21:29.930Z",
       "reviewedCandidateCount": 806,
       "reviewBasis": "Codex read the normalized text for each tracker candidate and encoded the resulting judgment as reason definitions plus per-card priority records.",
       "priorityDefinitions": {
@@ -54115,6 +54115,15 @@
           ]
         },
         {
+          "id": "deck-to-discard-transfer",
+          "priority": "must-check",
+          "description": "Moves the draw pile wholesale into discard, which can be lost if later discard snapshots are only partial or top-card-only.",
+          "patterns": [
+            "\\bput your deck into your discard pile\\b",
+            "\\bput (?:your|their) deck into (?:your|their) discard pile\\b"
+          ]
+        },
+        {
           "id": "hand-discard-or-hand-transfer",
           "priority": "watch",
           "description": "Moves cards from hand to discard/deck/play in ways that may need knowledge-state checks.",
@@ -54183,9 +54192,9 @@
         }
       ],
       "counts": {
-        "must-check": 364,
+        "must-check": 366,
         "watch": 351,
-        "normal": 237
+        "normal": 235
       },
       "behaviorCheckKeys": [
         "ADEPT",
@@ -54384,6 +54393,7 @@
         "MASQUERADE",
         "MATHEMATICS",
         "MERCHANT_CAMP",
+        "MESSENGER",
         "MILLER",
         "MINE",
         "MINING_ROAD",
@@ -54524,6 +54534,7 @@
         "TREASURY",
         "TRICKSTER",
         "TRINKETS",
+        "TRUSTY_STEED",
         "VAGRANT",
         "VAMPIRE",
         "VASSAL",
@@ -55683,6 +55694,13 @@
           "SETTLERS",
           "THE_MOONS_GIFT"
         ],
+        "deck-to-discard-transfer": [
+          "BAD_OMENS",
+          "HERB_GATHERER",
+          "MESSENGER",
+          "SCAVENGER",
+          "TRUSTY_STEED"
+        ],
         "hand-discard-or-hand-transfer": [
           "ALLEY",
           "AMBASSADOR",
@@ -56620,6 +56638,7 @@
           "reasonIds": [
             "non-discard-gain-destination",
             "topdeck-or-deck-order",
+            "deck-to-discard-transfer",
             "reveal-or-look-knowledge",
             "landscape-or-global-effect"
           ],
@@ -57925,7 +57944,8 @@
           "key": "HERB_GATHERER",
           "priority": "must-check",
           "reasonIds": [
-            "play-from-non-hand-or-unowned-card"
+            "play-from-non-hand-or-unowned-card",
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -58315,6 +58335,14 @@
           "reasonIds": [
             "non-discard-gain-destination",
             "topdeck-or-deck-order"
+          ],
+          "needsBehaviorCheck": true
+        },
+        {
+          "key": "MESSENGER",
+          "priority": "must-check",
+          "reasonIds": [
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -59012,7 +59040,8 @@
           "reasonIds": [
             "non-discard-gain-destination",
             "topdeck-or-deck-order",
-            "discard-pile-inspection-or-transfer"
+            "discard-pile-inspection-or-transfer",
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -59673,6 +59702,14 @@
           "priority": "must-check",
           "reasonIds": [
             "missing-text"
+          ],
+          "needsBehaviorCheck": true
+        },
+        {
+          "key": "TRUSTY_STEED",
+          "priority": "must-check",
+          "reasonIds": [
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -63294,6 +63331,7 @@
           "reasonIds": [
             "non-discard-gain-destination",
             "topdeck-or-deck-order",
+            "deck-to-discard-transfer",
             "reveal-or-look-knowledge",
             "landscape-or-global-effect"
           ],
@@ -65854,7 +65892,8 @@
         "HERB_GATHERER": {
           "priority": "must-check",
           "reasonIds": [
-            "play-from-non-hand-or-unowned-card"
+            "play-from-non-hand-or-unowned-card",
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -66728,9 +66767,11 @@
           "needsBehaviorCheck": false
         },
         "MESSENGER": {
-          "priority": "normal",
-          "reasonIds": [],
-          "needsBehaviorCheck": false
+          "priority": "must-check",
+          "reasonIds": [
+            "deck-to-discard-transfer"
+          ],
+          "needsBehaviorCheck": true
         },
         "MILITIA": {
           "priority": "watch",
@@ -68092,7 +68133,8 @@
           "reasonIds": [
             "non-discard-gain-destination",
             "topdeck-or-deck-order",
-            "discard-pile-inspection-or-transfer"
+            "discard-pile-inspection-or-transfer",
+            "deck-to-discard-transfer"
           ],
           "needsBehaviorCheck": true
         },
@@ -69327,9 +69369,11 @@
           "needsBehaviorCheck": false
         },
         "TRUSTY_STEED": {
-          "priority": "normal",
-          "reasonIds": [],
-          "needsBehaviorCheck": false
+          "priority": "must-check",
+          "reasonIds": [
+            "deck-to-discard-transfer"
+          ],
+          "needsBehaviorCheck": true
         },
         "TUNNEL": {
           "priority": "watch",

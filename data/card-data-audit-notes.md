@@ -52,6 +52,12 @@ Use this section as the quick source of truth before choosing the next card to t
 | Ambassador | `#178441615` | Revealed Copper, returned 2 Coppers to Supply, opponent gained separate Copper. | Removed returned Coppers from hero ownership and added opponent-gained Copper separately. | Yes. |
 | Lurker + Fortress | `#178448747` | Lurker trashed Fortress from Supply; Fortress replacement put it into hero hand. | Hero ended with `2 Fortress` in `HandZone`; recent moves showed `SetAsideZone -> TrashZone -> HandZone`. | No dedicated test; browser behavior looked correct. |
 
+### Synthetic Regression Covered, Browser Pending
+
+| Card / combo | Behavior covered | Remaining work |
+| --- | --- | --- |
+| Messenger | `put your deck into your discard pile` should preserve known draw-pile identities when the following discard snapshot is only partial/top-card-only. | Needs live browser verification of Dominion's actual card-move and snapshot sequence. |
+
 ### Partial / Setup Only
 
 | Card | Evidence | Remaining work |
@@ -62,6 +68,7 @@ Use this section as the quick source of truth before choosing the next card to t
 ### High-Risk Still Worth Prioritizing
 
 - Play-from-Supply Command cards: `Band Of Misfits`, `Overlord`, `Captain`.
+- Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
 - Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
 - Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
 - Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`.
@@ -70,7 +77,7 @@ Use this section as the quick source of truth before choosing the next card to t
 
 ## Tracker Risk Hunt
 
-The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 364 `must-check` keys out of 806 tracker candidates.
+The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 366 `must-check` keys out of 806 tracker candidates.
 
 The most suspicious current tracker assumption is in ownership handling for moves from unowned zones into player-controlled zones. `DeckKnowledgeTracker.applyMove` treats any move from a non-player-owned zone into a player-owned zone as a gain and adds the moved card to that player's owned-card ledger. That is correct for normal gains, but likely wrong for effects that play a card from the trash or Supply while explicitly leaving it there.
 

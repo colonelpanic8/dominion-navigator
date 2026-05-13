@@ -235,6 +235,15 @@ const BEHAVIOR_REVIEW_DEFINITIONS = [
     ]
   },
   {
+    id: "deck-to-discard-transfer",
+    priority: "must-check",
+    description: "Moves the draw pile wholesale into discard, which can be lost if later discard snapshots are only partial or top-card-only.",
+    patterns: [
+      "\\bput your deck into your discard pile\\b",
+      "\\bput (?:your|their) deck into (?:your|their) discard pile\\b"
+    ]
+  },
+  {
     id: "hand-discard-or-hand-transfer",
     priority: "watch",
     description: "Moves cards from hand to discard/deck/play in ways that may need knowledge-state checks.",
