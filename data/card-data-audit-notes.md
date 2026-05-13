@@ -207,6 +207,19 @@ Initial observations:
 - Game `#178452253`: played `Procession`, selected `Village`, and Dominion logged `plays a Village`, `plays a Village again`, then `trashes a Village`. The navigator overlay showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one.
 - The exact-cost replacement gain after Procession did not complete in either browser run; no gain prompt or gained card was observed after the trash step. Keep full Procession verification open.
 
+### Candidate Stress Kingdom 4
+
+The next focused browser target is `Travelling Fair`, because it creates a turn-wide optional replacement where an arbitrary gained card can be put onto the draw pile instead of following the ordinary gain destination.
+
+```text
+Travelling Fair, Village, Smithy, Market, Festival, Laboratory, Workshop, Remodel, Mine, Sentry, Merchant
+```
+
+Coverage intent:
+
+- `Travelling Fair`: buy the event, gain a card later that turn, choose to put the gained card onto the deck, and verify the tracker adds ownership while preserving the gained card's identity on `DrawZone`.
+- Compare this with existing Bureaucrat coverage: Bureaucrat is a direct gain-to-deck effect, while Travelling Fair is a replacement effect that can apply to any gain after the event is bought.
+
 ## Tracker Risk Hunt
 
 The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 366 `must-check` keys out of 806 tracker candidates.
