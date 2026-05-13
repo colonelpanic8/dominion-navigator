@@ -8,8 +8,14 @@ export type ReactionLog = {
   card: string;
 };
 
+export type TopdeckLog = {
+  playerToken: string;
+  cards: string[];
+};
+
 const REVEALED_HAND_LOG_PATTERN = /^(.+?) reveals their hand: (.+)\.$/;
 const REACTION_LOG_PATTERN = /^(.+?) reacts with (.+?)\.$/;
+const TOPDECK_LOG_PATTERN = /^(.+?) topdecks (.+?)\.$/;
 const CANONICAL_S_ENDING_CARD_NAMES = new Map(
   [
     "Apparatus",
@@ -83,6 +89,17 @@ export function parseReactionLog(text: string, knownCardNames: Iterable<string> 
   return { playerToken, card };
 }
 
+export function parseTopdeckLog(text: string, knownCardNames: Iterable<string> = []): TopdeckLog | undefined {
+  const match = text.match(TOPDECK_LOG_PATTERN);
+  if (!match) return undefined;
+  const [, playerToken, cardText] = match;
+  if (!playerToken || !cardText) return undefined;
+  return {
+    playerToken,
+    cards: parseLogCardList(stripTopdeckSource(cardText), knownCardNames)
+  };
+}
+
 export function parseLogCardList(text: string, knownCardNames: Iterable<string> = []): string[] {
   const knownCards = knownCardNameMap(knownCardNames);
   if (isEmptyCardListText(text)) return [];
@@ -104,6 +121,10 @@ export function parseLogCardList(text: string, knownCardNames: Iterable<string> 
   }
 
   return cards;
+}
+
+function stripTopdeckSource(text: string): string {
+  return text.replace(/\s+with\s+.+$/i, "").trim();
 }
 
 function isEmptyCardListText(text: string): boolean {

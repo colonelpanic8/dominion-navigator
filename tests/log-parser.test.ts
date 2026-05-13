@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseLogCardList, parseReactionLog, parseRevealedHandLog } from "../src/log-parser";
+import { parseLogCardList, parseReactionLog, parseRevealedHandLog, parseTopdeckLog } from "../src/log-parser";
 
 test("parses revealed hand logs with articles, counts, and plurals", () => {
   const parsed = parseRevealedHandLog("L reveals their hand: a Smithy, a Chapel, a Silver, and 2 Golds.", [
@@ -73,5 +73,16 @@ test("parses reaction logs", () => {
   assert.deepEqual(parseReactionLog("L reacts with a Moat.", ["Moat"]), {
     playerToken: "L",
     card: "Moat"
+  });
+});
+
+test("parses topdeck logs with source suffixes", () => {
+  assert.deepEqual(parseTopdeckLog("c topdecks a Silver with Travelling Fair.", ["Silver", "Travelling Fair"]), {
+    playerToken: "c",
+    cards: ["Silver"]
+  });
+  assert.deepEqual(parseTopdeckLog("c topdecks 2 Coppers and an Estate with Travelling Fair.", ["Copper", "Estate"]), {
+    playerToken: "c",
+    cards: ["Copper", "Copper", "Estate"]
   });
 });

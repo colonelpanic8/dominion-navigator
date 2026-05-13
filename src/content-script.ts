@@ -15,7 +15,7 @@ import {
   SerializedDeckKnowledgeTracker,
   ZoneKnowledge
 } from "./knowledge";
-import { parseLogCardList, parseReactionLog, parseRevealedHandLog } from "./log-parser";
+import { parseReactionLog, parseRevealedHandLog, parseTopdeckLog } from "./log-parser";
 
 type RuntimeWithChrome = typeof globalThis & {
   chrome?: {
@@ -65,7 +65,6 @@ let logObserverReady = false;
 const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v1:";
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 const LOG_LINE_RETRY_MS = 5000;
-const TOPDECK_LOG_PATTERN = /^(.+?) topdecks (.+?)\.$/;
 
 const root = document.createElement("section");
 root.id = "dominion-navigator-root";
@@ -433,13 +432,11 @@ function consumeRecentAnonymousTopdeck(player: NavigatorSnapshot["players"][numb
 }
 
 function applyKnownCardInZoneFromLogText(text: string): boolean {
-  const topdeck = text.match(TOPDECK_LOG_PATTERN);
+  const topdeck = parseTopdeckLog(text, knownCardNamesForLogParsing());
   if (!topdeck) return false;
-  const [, playerToken, cardText] = topdeck;
-  if (!playerToken || !cardText) return false;
-  const player = playerForLogToken(playerToken);
+  const player = playerForLogToken(topdeck.playerToken);
   if (!player) return false;
-  const cardNames = parseLogCardList(cardText, knownCardNamesForLogParsing());
+  const cardNames = topdeck.cards;
   if (cardNames.length === 0) return false;
   if (!consumeRecentAnonymousTopdeck(player, cardNames.length)) return false;
   return tracker.markKnownCardsInZone(player, "DrawZone", cardNames, { idempotent: false });
@@ -725,7 +722,7 @@ function processLogLine(element: Element, seen: WeakSet<Element>): void {
   }
 
   const text = element.textContent?.replace(/\s+/g, " ").trim();
-  const isTopdeckLog = Boolean(text && TOPDECK_LOG_PATTERN.test(text));
+  const isTopdeckLog = Boolean(text && parseTopdeckLog(text));
   const isRevealedHandLog = Boolean(text && parseRevealedHandLog(text));
   const isReactionLog = Boolean(text && parseReactionLog(text));
   if (!text) return;

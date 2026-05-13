@@ -76,6 +76,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Crypt | `#178450013` | Played Crypt, set aside Silver and Potion from play, then chose Silver to return at the next turn start. | Tracker kept Potion in a Crypt SetAsideZone while moving Silver from SetAsideZone to hand; Crypt stayed in play as the duration source. | No dedicated test; browser behavior looked correct. |
 | Procession + Fortress trash replacement | `#178452110` | Played Procession, selected Fortress, saw Fortress play twice, then Procession trashed it and Fortress replaced the trash by moving to hand. | Tracker showed `Fortress · your InPlayZone -> TrashZone -> your HandZone`; known ownership retained Fortress and placed one copy in hand. | No dedicated test; exact-cost Procession gain still pending. |
 | Procession + Village trash | `#178452253` | Played Procession, selected Village, saw Village play twice and then move from play to trash. | Tracker showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one. | No dedicated test; exact-cost Procession gain still pending. |
+| Travelling Fair topdeck gain | `#178452454` | Bought Travelling Fair, bought and gained Silver, then chose `Topdeck`. Dominion logged `topdecks a Silver with Travelling Fair` after an anonymous discard-to-draw move. | Found and fixed parser bug: the tracker initially treated `Silver with Travelling Fair` as a bogus card name. Topdeck logs now strip source suffixes before parsing card names. | Yes. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -219,6 +220,12 @@ Coverage intent:
 
 - `Travelling Fair`: buy the event, gain a card later that turn, choose to put the gained card onto the deck, and verify the tracker adds ownership while preserving the gained card's identity on `DrawZone`.
 - Compare this with existing Bureaucrat coverage: Bureaucrat is a direct gain-to-deck effect, while Travelling Fair is a replacement effect that can apply to any gain after the event is bought.
+
+Initial observations:
+
+- Game `#178452454`: bought `Travelling Fair`, bought and gained `Silver`, then clicked the `Topdeck` prompt. Dominion logged `c topdecks a Silver with Travelling Fair.`
+- The card move was an anonymous `DiscardZone -> DrawZone` move following the Silver gain. The tracker relies on the topdeck log to recover the identity.
+- Bug found: the topdeck log parser treated `Silver with Travelling Fair` as the card name, producing bogus ownership and draw-zone entries. Fixed by parsing topdeck logs separately and stripping trailing source suffixes before card-list parsing.
 
 ## Tracker Risk Hunt
 
