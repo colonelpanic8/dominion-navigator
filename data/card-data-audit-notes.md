@@ -80,6 +80,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Captain + Village | `#178452940` | Played owned Captain, selected Supply Village immediately, then selected Supply Village again from Captain's next-turn duration prompt. | Tracker kept ownership at `7 Copper, 5 Silver, 3 Estate, 1 Captain`; Supply Village was not added to owned cards or in-play ownership. Captain remained tracked in `InPlayZone` across the delayed prompt. | No dedicated test; browser behavior looked correct. |
 | Summon + Village | `#178453268` | Bought Summon, selected Village, then observed the next-turn automatic play from Summon's set-aside zone. | Tracker added the gained Village to ownership, showed `Village · your SetAsideZone -> your InPlayZone`, and ended with `7 Copper, 3 Estate, 2 Silver, 1 Village` known owned. | No dedicated test; browser behavior looked correct. |
 | Blockade + Village | `#178453392` | Played Blockade, gained Village setting it aside, then observed the next-turn hand return. | Tracker added the gained Village to ownership, showed `Village · SetAsideZone -> your SetAsideZone -> your HandZone`, and kept Blockade in play for the delayed return. | No dedicated test; browser behavior looked correct. |
+| Innovation + Village | `#178453466` | Bought Innovation, later bought and gained Village, chose the Innovation prompt, and played the gained Village. | Tracker added exactly one owned Village and kept ownership stable through the immediate play and cleanup; no duplicate or lost Village was observed. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -103,7 +104,7 @@ Use this section as the quick source of truth before choosing the next card to t
 - Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
 - Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
 - Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
-- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`. `Cargo Ship`, `Travelling Fair`, `Summon`, and `Blockade` have browser coverage.
+- Gain-and-play / gain-to-non-discard: `Continue`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`. `Cargo Ship`, `Travelling Fair`, `Summon`, `Blockade`, and `Innovation` have browser coverage.
 - Player-to-player transfer: `Masquerade`.
 - Possession/control: `Possession`.
 - Replay-and-trash / replay-with-gain cards: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, `Royal Carriage`. `Procession` is especially suspicious because the selected Action is played twice, then trashed, then replaced by a gained Action costing exactly one more.
@@ -288,6 +289,25 @@ Initial observations:
 - Dominion logged `c plays a Blockade.`, `c gains a Village setting it aside.`, then next turn `c puts a Village in hand (Blockade).`
 - The navigator overlay showed hero ownership `7 Copper, 4 Silver, 3 Estate, 1 Blockade, 1 Village`, with `Village · SetAsideZone -> your SetAsideZone -> your HandZone`.
 - `Blockade` stayed tracked in `InPlayZone` during the delayed return turn, which matches its Duration behavior.
+
+### Candidate Stress Kingdom 8
+
+The next focused browser target was `Innovation`, because it can play an Action card immediately after a normal gain. This differs from `Summon` and `Blockade`: the gained Action first appears in the normal gain destination, then may immediately move to play through a Project prompt.
+
+```text
+Innovation, Village, Smithy, Workshop, Remodel, Merchant, Market, Festival, Laboratory, Mine, Sentry
+```
+
+Coverage intent:
+
+- `Innovation`: buy the Project, later gain an Action card, choose the Innovation prompt, and verify the gained card remains owned exactly once.
+- Immediate play after gain: verify the tracker does not lose ownership when the card moves out of its gain destination to play, and does not double-count the same gained card.
+
+Initial observations:
+
+- Game `#178453466`: bought `Innovation`, then later bought and gained `Village`.
+- Dominion showed the prompt buttons `Innovation`, `Undo`, and `Continue`; choosing `Innovation` logged `c plays a Village.` immediately after the gain.
+- Before choosing the prompt, the tracker showed the gained `Village` in `DiscardZone`; after the Innovation play and cleanup, known ownership still had exactly `1 Village`.
 
 ## Tracker Risk Hunt
 
