@@ -112,6 +112,14 @@ Highest-value risk groups:
 - Control and player-to-player ownership changes: cards can be moved, gained, trashed, or returned while another player controls decisions. Candidate interactions: `Possession`, `Masquerade`, `Ambassador`, `Messenger` first-gain distribution, and attacks that cause every player to gain or trash in sequence.
 - Replay-and-trash / replay-with-gain chains: the same physical card can be played multiple times, trashed, replaced, and followed by a gain. Candidate interactions: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, and `Royal Carriage`, especially when the replayed card is `Fortress`, `Experiment`, `Horse`, or a Duration.
 
+Near-term interaction queue:
+
+- Stacked gain replacements: `Watchtower` plus `Travelling Fair`, `Way Of The Seal`, `Royal Seal`, or `Tiara`. Goal: verify a single gained card is not double-counted or left anonymous when multiple replacement prompts can redirect it.
+- Reload / set-aside Supply ownership: `Inheritance`, `Riverboat`, or `Way Of The Mouse`. Goal: verify a Supply card that is played or referenced from set-aside remains controlled but unowned, including after page reload or tracker restore.
+- Replay with return/trash oddities: `Procession` or `Throne Room` with `Experiment`, `Horse`, or `Fortress`. Goal: verify the same physical card is not duplicated or lost when it is replayed, returned to pile, trashed, or replaced.
+- Off-turn reactions: `Black Cat`, `Falconer`, `Horse Traders`, or `Caravan Guard`. Goal: verify cards played or moved during another player's turn are attributed to the right owner and turn context.
+- Possession is intentionally deprioritized despite high theoretical risk because it is effectively removed from the live card pool.
+
 ### Stress Kingdom 1
 
 Game `#178449122` uses a deliberately difficult ten-card kingdom:
