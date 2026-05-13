@@ -65,6 +65,12 @@ Use this section as the quick source of truth before choosing the next card to t
 | Duplicate + Exile discard | `#178449122` | Played owned Duplicate to Tavern, bought Estate, called Duplicate to gain a second Estate, then discarded matching Estate from Exile. | Duplicate moved `HandZone -> TavernZone -> InPlayZone` and left Tavern after cleanup; Estate ownership increased from the Duplicate gain, and ExileZone lost the discarded Estate. | No dedicated test; browser behavior looked correct. |
 | Trader exchange | `game-1-1778633504087` | Bought Gear while Trader was in hand, then chose the Trader reaction. | Tracker showed `1 Silver, 1 Trader` and no owned Gear, so the gained Gear was exchanged out for Silver. | No dedicated test; browser behavior looked correct. |
 | Black Market reveal | `game-1-1778633504087` | Played Black Market; Dominion revealed City, Ghost Town, and Sanctuary from the Black Market deck, then returned them after no Black Market buy. | Tracker treated the revealed Black Market cards as neutral `SetAsideZone -> RevealZone -> SetAsideZone` movement and did not add them to ownership. | No dedicated test; browser behavior looked correct. |
+| Trader + Changeling reaction | `#178450013` | Played Trader, trashed Estate, gained Silvers, and used a Changeling reaction on one gained Silver. | Log showed `receives a Changeling`; later ownership and draw counts were consistent with the exchanged Silver becoming Changeling. | No dedicated test; browser behavior looked correct. |
+| Gear delayed return | `#178450013` | Played Gear, set aside Trader and Silver, then checked the next turn start. | Tracker kept Trader/Silver on a delayed SetAsideZone, then returned both to hand at turn start with SetAsideZone empty. | No dedicated test; browser behavior looked correct. |
+| Changeling active gain | `#178450013` | Played Changeling at Night, trashed it, chose in-play Gear, and gained a Gear. | Tracker removed the trashed Changeling and added Gear; the apparent extra Changeling was explained by a prior Trader/Changeling exchange plus a bought Changeling. | No dedicated test; browser behavior looked correct. |
+| Black Market buy | `#178450013` | Played Black Market, played two Coppers during the Black Market prompt, bought revealed Gardens, and bottom-decked Pirate/Imperial Envoy. | Tracker added Gardens to hero ownership/discard and returned only the unbought Black Market deck cards to the neutral set-aside deck. | No dedicated test; browser behavior looked correct. |
+| Church | `#178450013` | Played Church, set aside Changeling and Estate, observed next-turn return, then trashed Estate with Church. | Tracker held the set-aside cards under a separate Church SetAsideZone, returned both to hand next turn, and removed the trashed Estate from ownership. | No dedicated test; browser behavior looked correct. |
+| Cage + Victory trigger | `#178450013` | Played Cage, set aside Changeling and Silver, bought Estate, then resolved Cage's self-trash and immediate return. | Tracker moved Cage out of ownership, returned Silver and Changeling to hand, and kept the gained Estate in discard. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -159,6 +165,12 @@ Initial observations:
 - Turn 1: bought `Black Market`.
 - Turn 2/3: bought `Trader`; on the following turn, bought `Gear` while Trader was in hand and chose `Trader`. Tracker showed the result as `1 Silver, 1 Trader` with no owned Gear.
 - Turn 4: played `Black Market`; it revealed `City`, `Ghost Town`, and `Sanctuary` from the Black Market deck. After choosing no Black Market buy, tracker showed those cards moving `SetAsideZone -> RevealZone -> SetAsideZone` without adding them to hero ownership.
+- Turn 6: played `Trader`, trashed Estate, gained Silvers, and used a `Changeling` reaction on one Silver; this produced a real extra Changeling and explained the later Changeling count.
+- Turn 7/8: played `Gear`, set aside Trader and Silver, and observed both return to hand at the start of the next turn.
+- Turn 8: played `Changeling`, trashed it, and gained a copy of in-play Gear; tracker added Gear and the remaining Changeling count matched the prior exchange/buy history.
+- Turn 11: played `Black Market`, played two Coppers in the Black Market prompt, gained revealed Gardens, and bottom-decked Pirate plus Imperial Envoy without adding them to ownership.
+- Turn 12/13: played `Church`, set aside Changeling and Estate, then next turn returned both and trashed the Estate with Church.
+- Turn 13: played `Cage`, set aside Changeling and Silver, bought Estate, then Cage trashed itself and immediately returned the set-aside cards to hand.
 
 ## Tracker Risk Hunt
 
