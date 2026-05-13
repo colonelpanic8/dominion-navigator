@@ -86,6 +86,8 @@ Use this section as the quick source of truth before choosing the next card to t
 | Card | Evidence | Remaining work |
 | --- | --- | --- |
 | Vassal | Bought successfully in custom kingdom; supply count dropped. | Need play-effect verification. |
+| Prince | Bought in stress kingdom 2 on turn 27 after Gold plus Silvers produced enough coins. | Need play-effect verification for Prince set-aside and repeated start-turn replay. |
+| Possession | Bought in stress kingdom 2 on turn 28 with `6 + Potion`. | Need play-effect verification for controlled turn ownership, gains, and trashed-card return behavior. |
 | Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine | Included in early custom kingdoms or audit setup. | Need actual effect playthroughs and tracker checks. |
 
 ### High-Risk Still Worth Prioritizing
@@ -178,6 +180,8 @@ Initial observations:
 - Turn 17: used Church to trash Black Market, then played `Graverobber` and gained Changeling from the trash onto the draw pile. The direct client method selected the first trash option, so this verified Graverobber's trash-to-deck movement with Changeling rather than Black Market.
 - Turn 20/21: played `Crypt`, set aside Silver and Potion from play, then returned Silver at the next turn start while Potion remained in SetAsideZone.
 - Turn 25: played `Graverobber`, trashed Trader from hand, and gained Gold; tracker removed Trader and added Gold.
+- Turn 27: bought `Prince`; this is setup only until Prince is drawn and played.
+- Turn 28: bought `Possession`; this is setup only until Possession is drawn and played.
 
 ## Tracker Risk Hunt
 
