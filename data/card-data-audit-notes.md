@@ -184,6 +184,19 @@ Initial observations:
 - Turn 27: bought `Prince`; this is setup only until Prince is drawn and played.
 - Turn 28: bought `Possession`; this is setup only until Possession is drawn and played.
 
+### Candidate Stress Kingdom 3
+
+The next focused browser target is `Procession` plus `Fortress`, since `Procession` replays one physical Action twice, trashes it, and then gains an exact-cost replacement, while `Fortress` replaces being trashed by moving to hand.
+
+```text
+Procession, Fortress, Village, Smithy, Market, Laboratory, Festival, Throne Room, Royal Carriage, Crown
+```
+
+Coverage intent:
+
+- `Procession + Fortress`: verify that the replayed Fortress is not lost when Procession trashes it, that Fortress moves to hand via its trash replacement, and that the exact-cost replacement gain is added separately.
+- Replay effects: compare Procession with `Throne Room`, `Royal Carriage`, and `Crown` in the same kingdom if the game state naturally reaches them.
+
 ## Tracker Risk Hunt
 
 The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 366 `must-check` keys out of 806 tracker candidates.
