@@ -53,6 +53,11 @@ Use this section as the quick source of truth before choosing the next card to t
 | Lurker + Fortress | `#178448747` | Lurker trashed Fortress from Supply; Fortress replacement put it into hero hand. | Hero ended with `2 Fortress` in `HandZone`; recent moves showed `SetAsideZone -> TrashZone -> HandZone`. | No dedicated test; browser behavior looked correct. |
 | Messenger | `#178449122` | Played Messenger and chose `Discard` for `put your deck into your discard pile`. | Hero `DrawZone` became empty and `DiscardZone` kept the known identities `3 Copper, 2 Estate, 1 Experiment, 1 Native Village`. | Yes. |
 | Experiment | `#178449122` | Bought one Experiment, gained the paired copy, then played Experiment and returned it to its pile. | Owned ledger moved from `2 Experiment` to `1 Experiment`; recent move showed `Experiment · your InPlayZone -> SetAsideZone`. | No dedicated return-to-pile test yet. |
+| Band Of Misfits + Bounty Hunter | `#178449122` | Played `Band Of Misfits`, chose Supply `Bounty Hunter`, then exiled an Estate from hand. | Supply `Bounty Hunter` did not enter play or add to hero ownership; Estate moved `HandZone -> ExileZone` while total known owned stayed stable. | No dedicated test; browser behavior looked correct. |
+| Band Of Misfits + Island | `#178449122` | Played `Band Of Misfits`, chose Supply `Island`, then put an Estate on the Island mat. | Dominion left `Band Of Misfits` in play and moved only the chosen Estate to `IslandZone`; tracker did not add an extra Supply Island. | No dedicated test; browser behavior looked correct. |
+| Native Village pickup | `#178449122` | Played Native Village and chose `Pick Up` after a prior set-aside. | Estate moved from `NVZone` to hand and `NVZone` became empty. | No dedicated test; browser behavior looked correct. |
+| Island | `#178449122` | Played owned Island, then set aside an Estate from hand. | Tracker moved the played Island and selected Estate to `IslandZone`, resulting in `2 Estate, 1 Island` there. | No dedicated test; browser behavior looked correct. |
+| Masquerade | `#178449122` | Opponent played Masquerade; hero passed Copper and received Estate; opponent then trashed an Estate. | Hero known ownership shifted to `6 Copper, 4 Estate`; opponent gained the Copper and lost the trashed Estate. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -104,6 +109,12 @@ Initial observations:
 - Turn 2: buying `Messenger` opened the distribute prompt; choosing `Native Village` correctly added one `Native Village` to each player's owned ledger.
 - Turn 3: playing `Experiment` drew two Coppers, then returned `Experiment` to the pile; tracker removed one Experiment from hero ownership.
 - Turn 3: playing `Messenger` and choosing `Discard` moved the deck into discard; tracker preserved the known draw identities in `DiscardZone`.
+- Turn 5: `Band Of Misfits` played Supply `Bounty Hunter`; the Supply card was not counted as owned or shown in play, while the Estate selected for Bounty Hunter moved to `ExileZone`.
+- Turn 6: `Band Of Misfits` played Supply `Island`; Dominion left Band in play and moved only the chosen Estate to `IslandZone`, with no extra Supply Island inferred.
+- Turn 7: Native Village `Pick Up` moved the set-aside Estate into hand and emptied `NVZone`.
+- Turn 7: owned `Island` moved itself plus an Estate onto `IslandZone`; tracker showed `2 Estate, 1 Island` there.
+- Turn 7/8: opponent `Masquerade` passed Estate to hero, hero passed Copper, and opponent trashed an Estate; tracker reflected the cross-player ownership transfer.
+- Turn 7: bought `Stockpile`; it is in the hero draw/discard cycle but self-exile-on-play remains pending.
 
 ## Tracker Risk Hunt
 
