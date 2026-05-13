@@ -37,6 +37,37 @@ Date: 2026-05-12.
 
 Purpose: establish a repeatable way to start bot games, restart from the same table, set specific kingdom cards, and begin checking the cards marked `must-check` in `trackerAudit.behaviorReview`.
 
+## Running Behavior Verification Ledger
+
+Use this section as the quick source of truth before choosing the next card to test. "Browser verified" means the behavior was exercised in a live Dominion Online game with the navigator overlay/event stream inspected. "Regression covered" means a focused tracker test was added or already exists for the observed movement pattern.
+
+### Browser Verified
+
+| Card / combo | Game | Behavior checked | Tracker result | Regression covered |
+| --- | --- | --- | --- | --- |
+| Necromancer + Zombie Apprentice | `#178442728` | Played a face-up Action from the trash while leaving it there. Dominion did not emit a `TrashZone -> InPlayZone` move for the Zombie. | Hero ownership stayed at `7 Copper, 3 Estate, 1 Necromancer`; Zombie did not enter owned ledger. | Yes, synthetic equivalent. |
+| Bandit | `#178429682` | Gained Gold; opponent revealed Copper/Smithy, then discarded them with one after-move identity anonymized. | Preserved before-move identities for reveal-to-discard. | Yes. |
+| Bureaucrat | `#178429682` | Gained Silver onto hero deck with after-move identity anonymized; opponent topdecked Estate from hand. | Kept Silver identity on hero deck; did not infer opponent anonymous topdeck identity from movement alone. | Yes. |
+| Sentry | `#178429682` | Revealed Copper/Silver, then topdecked them with after-move identities anonymized. | Kept known topdeck identities through anonymous draw-pile snapshot. | Yes. |
+| Ambassador | `#178441615` | Revealed Copper, returned 2 Coppers to Supply, opponent gained separate Copper. | Removed returned Coppers from hero ownership and added opponent-gained Copper separately. | Yes. |
+| Lurker + Fortress | `#178448747` | Lurker trashed Fortress from Supply; Fortress replacement put it into hero hand. | Hero ended with `2 Fortress` in `HandZone`; recent moves showed `SetAsideZone -> TrashZone -> HandZone`. | No dedicated test; browser behavior looked correct. |
+
+### Partial / Setup Only
+
+| Card | Evidence | Remaining work |
+| --- | --- | --- |
+| Vassal | Bought successfully in custom kingdom; supply count dropped. | Need play-effect verification. |
+| Advisor, Alchemist, Apothecary, Archive, Armory, Artificer, Artisan, Harbinger, Mine | Included in early custom kingdoms or audit setup. | Need actual effect playthroughs and tracker checks. |
+
+### High-Risk Still Worth Prioritizing
+
+- Play-from-Supply Command cards: `Band Of Misfits`, `Overlord`, `Captain`.
+- Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
+- Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
+- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`.
+- Player-to-player transfer: `Masquerade`.
+- Possession/control: `Possession`.
+
 ## Tracker Risk Hunt
 
 The behavior-review backlog is much larger than the early gameplay sample: `trackerAudit.behaviorReview.behaviorCheckKeys` currently contains 364 `must-check` keys out of 806 tracker candidates.
