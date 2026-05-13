@@ -62,6 +62,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Masquerade | `#178449122` | Opponent played Masquerade; hero passed Copper and received Estate; opponent then trashed an Estate. | Hero known ownership shifted to `6 Copper, 4 Estate`; opponent gained the Copper and lost the trashed Estate. | No dedicated test; browser behavior looked correct. |
 | Cargo Ship + Stockpile | `#178449122` | Played Cargo Ship, bought Stockpile, chose the Cargo Ship set-aside, then observed next-turn hand placement. | Gained Stockpile moved through Cargo Ship set-aside and appeared in hand at start of next turn; tracker kept identity through the delayed zone. | No dedicated test; browser behavior looked correct. |
 | Stockpile | `#178449122` | Played a Stockpile that had entered hand from Cargo Ship. | Tracker showed `Stockpile · HandZone -> InPlayZone -> ExileZone`; ExileZone contained `Copper, Estate, Stockpile`, while the other Stockpile stayed on `NVZone`. | No dedicated test; browser behavior looked correct. |
+| Duplicate + Exile discard | `#178449122` | Played owned Duplicate to Tavern, bought Estate, called Duplicate to gain a second Estate, then discarded matching Estate from Exile. | Duplicate moved `HandZone -> TavernZone -> InPlayZone` and left Tavern after cleanup; Estate ownership increased from the Duplicate gain, and ExileZone lost the discarded Estate. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -120,9 +121,10 @@ Initial observations:
 - Turn 7/8: opponent `Masquerade` passed Estate to hero, hero passed Copper, and opponent trashed an Estate; tracker reflected the cross-player ownership transfer.
 - Turn 7: bought `Stockpile`; Turn 9 Native Village set that Stockpile aside onto `NVZone`, preserving the card identity.
 - Turn 8: bought `Cargo Ship`; Turn 11 Cargo Ship set aside a gained Stockpile, and Turn 12 put it into hand.
-- Turn 9: bought `Duplicate`; call-on-gain behavior remains pending.
+- Turn 9: bought `Duplicate`; Turn 13 played a real Duplicate to Tavern, called it on an Estate gain, and gained a copied Estate.
 - Turn 10: `Band Of Misfits` played Supply `Duplicate`; Dominion logged the Duplicate play but did not move a Duplicate to `TavernZone` or add extra Duplicate ownership.
 - Turn 12: played Stockpile from hand; tracker showed `HandZone -> InPlayZone -> ExileZone`, while the separate Native Village Stockpile remained on `NVZone`.
+- Turn 13: after buying Estate and calling Duplicate, the matching Estate in Exile could be discarded; tracker removed it from `ExileZone` and retained the copied Estate gain.
 
 ## Tracker Risk Hunt
 
