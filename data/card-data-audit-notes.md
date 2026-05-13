@@ -78,6 +78,7 @@ Use this section as the quick source of truth before choosing the next card to t
 | Procession + Village trash | `#178452253` | Played Procession, selected Village, saw Village play twice and then move from play to trash. | Tracker showed `Village · your InPlayZone -> TrashZone` and reduced known Village ownership from two copies to one. | No dedicated test; exact-cost Procession gain still pending. |
 | Travelling Fair topdeck gain | `#178452454` | Bought Travelling Fair, bought and gained Silver, then chose `Topdeck`. Dominion logged `topdecks a Silver with Travelling Fair` after an anonymous discard-to-draw move. | Found and fixed parser bug: the tracker initially treated `Silver with Travelling Fair` as a bogus card name. Topdeck logs now strip source suffixes before parsing card names. | Yes. |
 | Captain + Village | `#178452940` | Played owned Captain, selected Supply Village immediately, then selected Supply Village again from Captain's next-turn duration prompt. | Tracker kept ownership at `7 Copper, 5 Silver, 3 Estate, 1 Captain`; Supply Village was not added to owned cards or in-play ownership. Captain remained tracked in `InPlayZone` across the delayed prompt. | No dedicated test; browser behavior looked correct. |
+| Summon + Village | `#178453268` | Bought Summon, selected Village, then observed the next-turn automatic play from Summon's set-aside zone. | Tracker added the gained Village to ownership, showed `Village · your SetAsideZone -> your InPlayZone`, and ended with `7 Copper, 3 Estate, 2 Silver, 1 Village` known owned. | No dedicated test; browser behavior looked correct. |
 
 ### Synthetic Regression Covered, Browser Pending
 
@@ -101,7 +102,7 @@ Use this section as the quick source of truth before choosing the next card to t
 - Whole-deck-to-discard transfers: `Messenger`, `Bad Omens`, `Herb Gatherer`, `Scavenger`, `Trusty Steed`.
 - Persistent nonstandard zones: `Island`, `Native Village`, Reserve/Tavern cards.
 - Exile: `Bounty Hunter`, `Coven`, `Transport`, `Stockpile`.
-- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Summon`, `Cargo Ship`, `Blockade`, `Travelling Fair`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`.
+- Gain-and-play / gain-to-non-discard: `Innovation`, `Continue`, `Blockade`, `Way Of The Seal`, `Tracker`, `Royal Seal`, `Tiara`. `Cargo Ship`, `Travelling Fair`, and `Summon` have browser coverage.
 - Player-to-player transfer: `Masquerade`.
 - Possession/control: `Possession`.
 - Replay-and-trash / replay-with-gain cards: `Procession`, `Disciple`, `Throne Room`, `Kings Court`, `Crown`, `Royal Carriage`. `Procession` is especially suspicious because the selected Action is played twice, then trashed, then replaced by a gained Action costing exactly one more.
@@ -247,6 +248,25 @@ Initial observations:
 - Dominion logged `c plays a Captain.`, `c plays a Village.`, then next turn `c plays a Village. (Captain)`.
 - The navigator overlay kept hero ownership at `7 Copper, 5 Silver, 3 Estate, 1 Captain`. It did not add any owned `Village` from either the immediate Command play or the next-turn Duration play.
 - The owned `Captain` stayed tracked in `InPlayZone` while the next-turn prompt resolved.
+
+### Candidate Stress Kingdom 6
+
+The next focused browser target was `Summon`, because it gains a Supply Action, sets it aside, and plays it at the start of the next turn. This is distinct from Command cards such as Captain: the played Supply card should become owned even though it goes through a non-discard gain destination.
+
+```text
+Summon, Village, Smithy, Workshop, Remodel, Merchant, Market, Festival, Laboratory, Mine, Sentry
+```
+
+Coverage intent:
+
+- `Summon`: verify that the gained Supply Action enters the hero's owned-card ledger.
+- `Summon` delayed play: verify that the gained card's identity survives `SetAsideZone -> InPlayZone` at the next turn start.
+
+Initial observations:
+
+- Game `#178453268`: bought `Summon` on turn 3, selected `Village`, and observed the next-turn start play.
+- Dominion logged `c buys a Summon.`, `c gains a Village.`, `c sets a Village aside.`, then on turn 4 `c plays a Village. (Summon)`.
+- The navigator overlay ended with hero ownership `7 Copper, 3 Estate, 2 Silver, 1 Village`, with the move log showing `Village · your SetAsideZone -> your InPlayZone`.
 
 ## Tracker Risk Hunt
 
