@@ -127,6 +127,10 @@ export type ContentCommand =
           cards: KnowledgeWindowCardSummary[];
           unknownCount: number;
         };
+        excludedFromActiveDeck?: {
+          cards: KnowledgeWindowCardSummary[];
+          unknownCount: number;
+        };
         entireDeck?: {
           cards: KnowledgeWindowCardSummary[];
           unknownCount: number;

@@ -832,6 +832,40 @@ function knowledgeWindowCardsForZone(zone: ZoneDetail, summary: KnowledgeSummary
   return trackedKnowledgeWindowCards(trackedZone, player);
 }
 
+function addKnowledgeWindowCards(target: CardCounter, source: KnowledgeWindowCardSummary[]): void {
+  for (const item of source) target[item.name] = (target[item.name] ?? 0) + item.count;
+}
+
+function combineKnowledgeWindowPiles(piles: KnowledgeWindowPileSummary[]): KnowledgeWindowPileSummary {
+  const cards: CardCounter = {};
+  let unknownCount = 0;
+
+  for (const pile of piles) {
+    addKnowledgeWindowCards(cards, pile.cards);
+    unknownCount += pile.unknownCount;
+  }
+
+  return {
+    cards: counterToWindowCards(cards),
+    unknownCount
+  };
+}
+
+function combineTrackedZonesForKnowledgeWindow(zones: ZoneKnowledge[]): KnowledgeWindowPileSummary {
+  const cards: CardCounter = {};
+  let unknownCount = 0;
+
+  for (const zone of zones) {
+    for (const [name, count] of Object.entries(zone.knownCards)) cards[name] = (cards[name] ?? 0) + count;
+    unknownCount += zone.unknownCount + zone.ambiguousCount;
+  }
+
+  return {
+    cards: counterToWindowCards(cards),
+    unknownCount
+  };
+}
+
 function relatedPlayerZone(snapshot: NavigatorSnapshot | undefined, sourceZone: ZoneDetail, zoneName: string): ZoneDetail | undefined {
   return snapshot?.playerZones
     .filter((zone) => zone.zoneName === zoneName && samePlayer(zone.owner, sourceZone.owner))
@@ -864,6 +898,23 @@ function discardKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeS
   return { cards: [], unknownCount: 0 };
 }
 
+function isActiveDeckZone(zoneName: string): boolean {
+  return zoneName === "DrawZone" || zoneName === "DiscardZone";
+}
+
+function excludedFromActiveDeckKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
+  const player = knowledgeForZone(summary, sourceZone);
+  if (player) {
+    return combineTrackedZonesForKnowledgeWindow(player.zones.filter((zone) => !isActiveDeckZone(zone.zoneName)));
+  }
+
+  return combineKnowledgeWindowPiles(
+    (latestSnapshot?.playerZones ?? [])
+      .filter((zone) => !isActiveDeckZone(zone.zoneName) && samePlayer(zone.owner, sourceZone.owner))
+      .map((zone) => knowledgeWindowCardsForZone(zone, summary))
+  );
+}
+
 function entireDeckKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
   const player = knowledgeForZone(summary, sourceZone);
   if (!player) return { cards: [], unknownCount: 0 };
@@ -891,6 +942,7 @@ function showDrawKnowledgeWindow(zone: ZoneDetail): void {
       cards,
       unknownCount,
       discardPile: discardKnowledgeWindowCards(zone, summary),
+      excludedFromActiveDeck: excludedFromActiveDeckKnowledgeWindowCards(zone, summary),
       entireDeck: entireDeckKnowledgeWindowCards(zone, summary)
     }
   };

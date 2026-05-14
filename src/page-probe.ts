@@ -724,6 +724,14 @@ function showDrawKnowledgeWindow(payload: Extract<ContentCommand, { type: "show-
     body,
     game,
     sourceZone,
+    "Excluded from Active Deck",
+    payload.excludedFromActiveDeck ?? { cards: [], unknownCount: 0 },
+    "No out-of-reshuffle cards are currently tracked."
+  );
+  appendKnowledgePileSection(
+    body,
+    game,
+    sourceZone,
     "Entire Deck",
     payload.entireDeck ?? { cards: [], unknownCount: 0 },
     "No full-deck totals are currently tracked."
