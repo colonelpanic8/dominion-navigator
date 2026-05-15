@@ -1,5 +1,6 @@
 node_modules/
 dist/
 releases/
+invariant-reports/
 *.log
 .playwright-cli/

@@ -24,6 +24,10 @@ const child = spawn(
     `--remote-debugging-port=${port}`,
     "--remote-allow-origins=http://127.0.0.1,http://localhost",
     "--enable-unsafe-extension-debugging",
+    "--ozone-platform-hint=auto",
+    "--enable-features=WaylandWindowDecorations",
+    "--enable-wayland-ime=true",
+    "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",
     url
@@ -97,4 +101,8 @@ async function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-process.stdin.resume();
+
+// Keep the launcher process alive even when it is started detached with stdin
+// connected to /dev/null. Chrome's remote-debugging pipe closes when this
+// process exits, which unloads the extension with it.
+setInterval(() => {}, 60 * 60 * 1000);

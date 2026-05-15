@@ -14,6 +14,7 @@ import {
   KnowledgeSummary,
   PlayerDeckKnowledge,
   SerializedDeckKnowledgeTracker,
+  ZoneCountReconciliation,
   ZoneKnowledge
 } from "./knowledge";
 import { parseReactionLog, parseRevealedHandLog, parseTopdeckLog } from "./log-parser";
@@ -52,6 +53,35 @@ type StoredNavigatorState = {
   recentMoves: CardMoveSummary[];
 };
 
+type CountInvariantViolation = {
+  kind: "zone-count" | "zone-group-count";
+  player: ZoneSummary["owner"];
+  zoneKey?: string;
+  zoneName?: string;
+  zoneNames?: string[];
+  trackedCount: number;
+  observedCount: number;
+};
+
+type StoredInvariantReport = {
+  version: 1;
+  id: string;
+  gameId: string;
+  fingerprint: string;
+  capturedAt: string;
+  href: string;
+  gameNumber?: string;
+  reason: string;
+  activeTurn?: NavigatorSnapshot["activeTurn"];
+  event?: CardMoveSummary | NavigatorSnapshot;
+  violations: CountInvariantViolation[];
+  repairs: ZoneCountReconciliation[];
+  beforeSummary: KnowledgeSummary;
+  afterSummary: KnowledgeSummary;
+  latestSnapshot?: NavigatorSnapshot;
+  recentMoves: CardMoveSummary[];
+};
+
 const runtime = globalThis as RuntimeWithChrome;
 
 let latestSnapshot: NavigatorSnapshot | undefined;
@@ -65,10 +95,15 @@ let pendingHeroDrawWindowOpen = false;
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
 let logObserverReady = false;
+const activeInvariantFingerprints = new Set<string>();
 
 const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v4:";
+const INVARIANT_REPORTS_KEY_PREFIX = "dominion-navigator:invariant-reports:v1:";
+const INVARIANT_REPORT_SINK_URL = "http://127.0.0.1:9237/invariant-report";
+const MAX_INVARIANT_REPORTS = 20;
 const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 const LOG_LINE_RETRY_MS = 5000;
+const EXACT_COUNT_ZONE_NAMES = new Set(["DrawZone", "HandZone"]);
 
 const root = document.createElement("section");
 root.id = "dominion-navigator-root";
@@ -325,8 +360,19 @@ function storageKey(): string {
   return `${STORAGE_KEY_PREFIX}${window.location.href}`;
 }
 
+function invariantReportsKey(gameId = currentReportGameId()): string {
+  return `${INVARIANT_REPORTS_KEY_PREFIX}${gameId}:${window.location.href}`;
+}
+
 function currentGameNumber(): string | undefined {
   return document.body?.innerText.match(/Game #(\d+)/)?.[1];
+}
+
+function currentReportGameId(snapshot = latestSnapshot): string {
+  const gameNumber = currentGameNumber();
+  if (gameNumber) return `dominion-game-${gameNumber}`;
+  if (snapshot?.gameInstanceId) return snapshot.gameInstanceId;
+  return "unknown-game";
 }
 
 function snapshotIdentity(snapshot: NavigatorSnapshot): SnapshotIdentity {
@@ -360,6 +406,17 @@ function isStoredNavigatorState(value: unknown): value is StoredNavigatorState {
     isObject(value.tracker) &&
     value.tracker.version === 1 &&
     Array.isArray(value.recentMoves)
+  );
+}
+
+function isStoredInvariantReport(value: unknown): value is StoredInvariantReport {
+  return (
+    isObject(value) &&
+    value.version === 1 &&
+    typeof value.id === "string" &&
+    typeof value.gameId === "string" &&
+    typeof value.fingerprint === "string" &&
+    Array.isArray(value.violations)
   );
 }
 
@@ -411,6 +468,190 @@ function persistState(snapshot: NavigatorSnapshot): void {
   };
 
   localStorage.set({ [storageKey()]: state });
+}
+
+function reportId(capturedAt: string): string {
+  const timestamp = capturedAt.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-|-$/g, "");
+  return `${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function playerIdentityKey(player: ZoneSummary["owner"] | PlayerDeckKnowledge["player"] | undefined): string {
+  if (!player) return "unknown";
+  if (player.index !== undefined) return `index:${player.index}`;
+  return `name:${player.name ?? "unknown"}`;
+}
+
+function observedExactCountZonesFromSnapshot(snapshot: NavigatorSnapshot): ZoneSummary[] {
+  return snapshot.playerZones.filter((zone) => EXACT_COUNT_ZONE_NAMES.has(zone.zoneName));
+}
+
+function observedExactCountZonesFromMove(move: CardMoveSummary): ZoneSummary[] {
+  if (move.phase !== "after") return [];
+  const zones = [move.from, move.to].filter(
+    (zone): zone is ZoneSummary => Boolean(zone?.owner && EXACT_COUNT_ZONE_NAMES.has(zone.zoneName))
+  );
+  const byKey = new Map<string, ZoneSummary>();
+  for (const zone of zones) byKey.set(`${zone.index}:${zone.zoneName}`, zone);
+  return [...byKey.values()];
+}
+
+function trackedPlayerForObservedZone(summary: KnowledgeSummary, zone: ZoneSummary): PlayerDeckKnowledge | undefined {
+  return summary.players.find((player) => samePlayer(zone.owner, player.player));
+}
+
+function countInvariantViolations(summary: KnowledgeSummary, observedZones: ZoneSummary[]): CountInvariantViolation[] {
+  const violations: CountInvariantViolation[] = [];
+  const groups = new Map<
+    string,
+    {
+      player: ZoneSummary["owner"];
+      zoneNames: Set<string>;
+      trackedCount: number;
+      observedCount: number;
+    }
+  >();
+
+  for (const observed of observedZones) {
+    const player = trackedPlayerForObservedZone(summary, observed);
+    const key = `${observed.index}:${observed.zoneName}`;
+    const trackedCount = player?.zones.find((zone) => zone.zoneKey === key)?.totalCount ?? 0;
+    if (trackedCount !== observed.cardCount) {
+      violations.push({
+        kind: "zone-count",
+        player: observed.owner,
+        zoneKey: key,
+        zoneName: observed.zoneName,
+        trackedCount,
+        observedCount: observed.cardCount
+      });
+    }
+
+    const groupKey = playerIdentityKey(observed.owner);
+    const group = groups.get(groupKey) ?? {
+      player: observed.owner,
+      zoneNames: new Set<string>(),
+      trackedCount: 0,
+      observedCount: 0
+    };
+    group.zoneNames.add(observed.zoneName);
+    group.trackedCount += trackedCount;
+    group.observedCount += observed.cardCount;
+    groups.set(groupKey, group);
+  }
+
+  for (const group of groups.values()) {
+    if (!group.zoneNames.has("DrawZone") || !group.zoneNames.has("HandZone")) continue;
+    if (group.trackedCount === group.observedCount) continue;
+    violations.push({
+      kind: "zone-group-count",
+      player: group.player,
+      zoneNames: [...group.zoneNames].sort((a, b) => a.localeCompare(b)),
+      trackedCount: group.trackedCount,
+      observedCount: group.observedCount
+    });
+  }
+
+  return violations;
+}
+
+function invariantFingerprint(gameId: string, violations: CountInvariantViolation[]): string {
+  const normalized = violations
+    .map((violation) => ({
+      kind: violation.kind,
+      player: playerIdentityKey(violation.player),
+      zoneKey: violation.zoneKey ?? "",
+      zoneName: violation.zoneName ?? "",
+      zoneNames: [...(violation.zoneNames ?? [])].sort((a, b) => a.localeCompare(b)),
+      trackedCount: violation.trackedCount,
+      observedCount: violation.observedCount
+    }))
+    .sort(
+      (a, b) =>
+        a.kind.localeCompare(b.kind) ||
+        a.player.localeCompare(b.player) ||
+        a.zoneKey.localeCompare(b.zoneKey) ||
+        a.zoneName.localeCompare(b.zoneName)
+    );
+  return hashString(JSON.stringify({ gameId, normalized }));
+}
+
+function appendInvariantReport(report: StoredInvariantReport): void {
+  console.warn("Dominion Navigator invariant report", report);
+  void mirrorInvariantReportToDevSink(report);
+
+  const localStorage = runtime.chrome?.storage?.local;
+  if (!localStorage?.get || !localStorage.set) return;
+  const key = invariantReportsKey(report.gameId);
+  localStorage.get(key, (items) => {
+    const existing = Array.isArray(items[key]) ? items[key].filter(isStoredInvariantReport) : [];
+    const next = [...existing, report].slice(-MAX_INVARIANT_REPORTS);
+    localStorage.set?.({ [key]: next });
+  });
+}
+
+async function mirrorInvariantReportToDevSink(report: StoredInvariantReport): Promise<void> {
+  try {
+    await fetch(INVARIANT_REPORT_SINK_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(report)
+    });
+  } catch {
+    // The dev sink only exists while `npm run dev` is running.
+  }
+}
+
+function reportCountInvariants(
+  reason: string,
+  observedZones: ZoneSummary[],
+  beforeSummary: KnowledgeSummary,
+  event?: CardMoveSummary | NavigatorSnapshot
+): { repairs: ZoneCountReconciliation[]; summary: KnowledgeSummary } {
+  if (observedZones.length === 0) return { repairs: [], summary: beforeSummary };
+
+  const violations = countInvariantViolations(beforeSummary, observedZones);
+  if (violations.length === 0) {
+    activeInvariantFingerprints.clear();
+    return { repairs: [], summary: beforeSummary };
+  }
+
+  const repairs = tracker.reconcileObservedZoneCounts(observedZones);
+  const afterSummary = tracker.summary();
+  const capturedAt = new Date().toISOString();
+  const gameNumber = currentGameNumber();
+  const gameId = currentReportGameId();
+  const fingerprint = invariantFingerprint(gameId, violations);
+  if (activeInvariantFingerprints.has(fingerprint)) return { repairs, summary: afterSummary };
+  activeInvariantFingerprints.add(fingerprint);
+
+  appendInvariantReport({
+    version: 1,
+    id: reportId(capturedAt),
+    gameId,
+    fingerprint,
+    capturedAt,
+    href: window.location.href,
+    ...(gameNumber ? { gameNumber } : {}),
+    reason,
+    ...(latestSnapshot?.activeTurn ? { activeTurn: latestSnapshot.activeTurn } : {}),
+    ...(event ? { event } : {}),
+    violations,
+    repairs,
+    beforeSummary,
+    afterSummary,
+    ...(latestSnapshot ? { latestSnapshot } : {}),
+    recentMoves: recentMoves.slice(-30)
+  });
+  return { repairs, summary: afterSummary };
 }
 
 function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean {
@@ -990,7 +1231,13 @@ window.addEventListener("resize", () => {
 function renderSnapshot(snapshot: NavigatorSnapshot): void {
   latestSnapshot = snapshot;
   if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
-  const summary = tracker.summary();
+  const beforeInvariantSummary = tracker.summary();
+  const { summary } = reportCountInvariants(
+    "snapshot",
+    observedExactCountZonesFromSnapshot(snapshot),
+    beforeInvariantSummary,
+    snapshot
+  );
   const heroName = snapshot.hero?.name ?? "unknown player";
   const turn = snapshot.activeTurn?.turnNumber === undefined ? "unknown turn" : `turn ${snapshot.activeTurn.turnNumber}`;
   metaElement.textContent = `${heroName} · ${turn} · ${snapshot.gameRunning ? "running" : "not running"}`;
@@ -1043,7 +1290,13 @@ window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
     while (recentMoves.length > 30) recentMoves.shift();
     tracker.applyMove(event.data.payload);
     recordAnonymousTopdeck(event.data.payload);
-    const summary = tracker.summary();
+    const beforeInvariantSummary = tracker.summary();
+    const { summary } = reportCountInvariants(
+      "card-move",
+      observedExactCountZonesFromMove(event.data.payload),
+      beforeInvariantSummary,
+      event.data.payload
+    );
     renderMoves();
     renderKnowledge(summary);
     if (latestSnapshot) renderZones(summary, latestSnapshot);

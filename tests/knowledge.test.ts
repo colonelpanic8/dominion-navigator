@@ -117,6 +117,264 @@ function moveWithNames(from: ZoneSummary, to: ZoneSummary, names: string[]): Car
   };
 }
 
+test("observed count reconciliation repairs opponent draw and hand totals", () => {
+  const tracker = new DeckKnowledgeTracker();
+  const startingDeck = ["Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Estate", "Estate", "Estate"];
+  tracker.applySnapshot(
+    snapshot(
+      [
+        zone(10, "HandZone", [], 5, opponent),
+        zone(11, "DrawZone", [], 5, opponent)
+      ],
+      "game-1",
+      startingDeck
+    )
+  );
+
+  tracker.applyMove(move(opponentSummaryZone(10, "HandZone", ["Back"]), opponentSummaryZone(11, "DrawZone", ["Back"]), 2));
+  let opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  assert.equal(opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone")?.totalCount, 3);
+  assert.equal(opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone")?.totalCount, 7);
+
+  const repairs = tracker.reconcileObservedZoneCounts([
+    { ...opponentSummaryZone(10, "HandZone"), cardCount: 5 },
+    { ...opponentSummaryZone(11, "DrawZone"), cardCount: 5 }
+  ]);
+
+  assert.equal(repairs.length, 2);
+  opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  assert.equal(opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone")?.totalCount, 5);
+  assert.equal(opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone")?.totalCount, 5);
+  assert.equal(Object.values(opponentKnowledge?.totalKnownOwned ?? {}).reduce((total, count) => total + count, 0), 10);
+});
+
+test("observed count reconciliation anonymizes known zone locations", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(snapshot([zone(10, "HandZone", ["Silver", "Gold"], 0, opponent)]));
+
+  const repairs = tracker.reconcileObservedZoneCounts([{ ...opponentSummaryZone(10, "HandZone"), cardCount: 1 }]);
+
+  assert.deepEqual(repairs[0]?.relocatedKnownCards, { Gold: 1, Silver: 1 });
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const opponentHand = opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+  assert.equal(opponentHand?.knownCards.Silver, undefined);
+  assert.equal(opponentHand?.totalCount, 1);
+  assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, { Gold: 1, Silver: 1 });
+});
+
+test("opponent cleanup draw accounts for implicit discard refill into draw pile", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "HandZone", [], 0, opponent),
+      zone(11, "DrawZone", [], 5, opponent),
+      zone(12, "DiscardZone", ["Silver"], 0, opponent)
+    ])
+  );
+
+  tracker.applyMove(
+    move(
+      { ...opponentSummaryZone(11, "DrawZone", ["Back"]), cardCount: 1 },
+      { ...opponentSummaryZone(10, "HandZone", ["Back", "Back", "Back", "Back", "Back"]), cardCount: 5 },
+      5
+    )
+  );
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const opponentDraw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const opponentHand = opponentKnowledge?.zones.find((item) => item.zoneName === "HandZone");
+  const opponentDiscard = opponentKnowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.equal(opponentDraw?.totalCount, 1);
+  assert.equal(opponentDraw?.unknownCount, 1);
+  assert.equal(opponentHand?.totalCount, 5);
+  assert.equal(opponentDiscard, undefined);
+  assert.deepEqual(opponentKnowledge?.unlocatedKnownCards, { Silver: 1 });
+});
+
+test("discard to draw reshuffle caps anonymous transfer to observed draw delta", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "HandZone", [], 0, player),
+      zone(11, "DrawZone", [], 1, player),
+      zone(12, "DiscardZone", ["Puzzle Box"], 2, player)
+    ])
+  );
+
+  tracker.applyMove(
+    move(
+      { ...summaryZone(12, "DiscardZone", ["Puzzle Box"]), cardCount: 1 },
+      { ...summaryZone(11, "DrawZone", ["Back"]), cardCount: 2 },
+      2
+    )
+  );
+
+  const heroKnowledge = tracker.summary().players.find((item) => item.player.index === player.index);
+  const heroDraw = heroKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const heroDiscard = heroKnowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+
+  assert.equal(heroDraw?.totalCount, 2);
+  assert.equal(heroDraw?.unknownCount, 2);
+  assert.equal(heroDiscard?.totalCount, 2);
+});
+
+test("omitted draw to reveal cards deplete the observed source pile", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "DrawZone", [], 2, opponent),
+      zone(11, "RevealZone", [], 0, opponent)
+    ])
+  );
+
+  tracker.applyMove(
+    moveWithNames(
+      { ...opponentSummaryZone(10, "DrawZone", []), cardCount: 0 },
+      { ...opponentSummaryZone(11, "RevealZone", ["Herald", "Tunnel"]), cardCount: 2 },
+      ["Tunnel"]
+    )
+  );
+
+  const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
+  const opponentDraw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const opponentReveal = opponentKnowledge?.zones.find((item) => item.zoneName === "RevealZone");
+
+  assert.equal(opponentDraw?.totalCount ?? 0, 0);
+  assert.equal(opponentReveal?.totalCount, 2);
+  assert.deepEqual(opponentReveal?.knownCards, { Tunnel: 1 });
+  assert.equal(opponentReveal?.unknownCount, 1);
+});
+
+test("revealed draw cards returned to draw replace stale temporary draw count", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "DrawZone", [], 9, player),
+      zone(11, "RevealZone", [], 0, player)
+    ])
+  );
+
+  tracker.applyMove(
+    moveWithNames(
+      { ...summaryZone(10, "DrawZone", ["Back"]), cardCount: 5 },
+      { ...summaryZone(11, "RevealZone", ["Bounty Hunter", "Silver", "Gold", "Gold"]), cardCount: 4 },
+      ["Bounty Hunter", "Silver", "Gold", "Gold"]
+    )
+  );
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(2).toISOString(),
+    phase: "after",
+    from: { ...summaryZone(11, "RevealZone", ["Silver", "Gold", "Gold", "Bounty Hunter"]), cardCount: 0 },
+    to: { ...summaryZone(10, "DrawZone", ["Back"]), cardCount: 4 },
+    cardIds: [20, 21, 22, 23],
+    cards: ["Silver", "Gold", "Gold", "Bounty Hunter"],
+    cardIdsAfterMoving: [-1, -1, -1, -1],
+    cardsAfterMoving: ["Anonymous", "Anonymous", "Anonymous", "Anonymous"]
+  });
+
+  const heroKnowledge = tracker.summary().players.find((item) => item.player.index === player.index);
+  const heroDraw = heroKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const heroReveal = heroKnowledge?.zones.find((item) => item.zoneName === "RevealZone");
+
+  assert.equal(heroDraw?.totalCount, 4);
+  assert.equal(heroDraw?.unknownCount, 0);
+  assert.deepEqual(heroDraw?.knownCards, { "Bounty Hunter": 1, Gold: 2, Silver: 1 });
+  assert.equal(heroReveal?.totalCount ?? 0, 0);
+});
+
+test("revealed draw cards discarded before put back keep discard identities", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.applySnapshot(
+    snapshot([
+      zone(10, "DrawZone", [], 6, player),
+      zone(11, "RevealZone", [], 0, player),
+      zone(12, "DiscardZone", [], 0, player)
+    ])
+  );
+
+  tracker.applyMove(
+    moveWithNames(
+      { ...summaryZone(10, "DrawZone", ["Back"]), cardCount: 2 },
+      { ...summaryZone(11, "RevealZone", ["Bounty Hunter", "Silver", "Gold", "Cartographer"]), cardCount: 4 },
+      ["Bounty Hunter", "Silver", "Gold", "Cartographer"]
+    )
+  );
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(2).toISOString(),
+    phase: "after",
+    from: { ...summaryZone(11, "RevealZone", ["Silver", "Gold"]), cardCount: 2 },
+    to: { ...summaryZone(12, "DiscardZone", ["Gold"]), cardCount: 2 },
+    cardIds: [20, 21],
+    cards: ["Silver", "Gold"],
+    cardIdsAfterMoving: [-1, 21],
+    cardsAfterMoving: ["Anonymous", "Gold"]
+  });
+  tracker.applyMove({
+    kind: "card-move",
+    capturedAt: new Date(3).toISOString(),
+    phase: "after",
+    from: { ...summaryZone(11, "RevealZone", ["Bounty Hunter", "Cartographer"]), cardCount: 0 },
+    to: { ...summaryZone(10, "DrawZone", ["Back"]), cardCount: 4 },
+    cardIds: [22, 23],
+    cards: ["Bounty Hunter", "Cartographer"],
+    cardIdsAfterMoving: [-1, -1],
+    cardsAfterMoving: ["Anonymous", "Anonymous"]
+  });
+
+  const heroKnowledge = tracker.summary().players.find((item) => item.player.index === player.index);
+  const heroDraw = heroKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+  const heroDiscard = heroKnowledge?.zones.find((item) => item.zoneName === "DiscardZone");
+  const heroReveal = heroKnowledge?.zones.find((item) => item.zoneName === "RevealZone");
+
+  assert.equal(heroDraw?.totalCount, 4);
+  assert.deepEqual(heroDraw?.knownCards, { "Bounty Hunter": 1, Cartographer: 1 });
+  assert.equal(heroDraw?.unknownCount, 2);
+  assert.deepEqual(heroDiscard?.knownCards, { Gold: 1, Silver: 1 });
+  assert.equal(heroDiscard?.unknownCount, 0);
+  assert.equal(heroReveal?.totalCount ?? 0, 0);
+});
+
+test("hero draw derivation does not invent extra draw pile cards from an overlarge owned remainder", () => {
+  const tracker = new DeckKnowledgeTracker();
+  tracker.restore({
+    version: 1,
+    initialized: true,
+    gameInstanceId: "game-1",
+    players: [
+      {
+        key: "0",
+        player,
+        confidence: "observed",
+        totalKnownOwned: { Copper: 2, Estate: 1 },
+        totalUnknownOwned: 0,
+        zones: [
+          { zoneKey: "10:HandZone", zoneName: "HandZone", knownCards: { Copper: 1 }, unknownCount: 0 },
+          { zoneKey: "11:DrawZone", zoneName: "DrawZone", knownCards: {}, unknownCount: 1 }
+        ]
+      }
+    ]
+  });
+
+  const heroKnowledge = tracker.summary().players.find((item) => item.player.index === player.index);
+  const heroDraw = heroKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
+
+  assert.equal(heroDraw?.totalCount, 1);
+  assert.equal(heroDraw?.unknownCount, 1);
+  assert.deepEqual(heroDraw?.knownCards, {});
+  assert.deepEqual(heroKnowledge?.locationCandidateGroups, [
+    {
+      zoneKeys: ["11:DrawZone"],
+      zoneNames: ["DrawZone"],
+      knownCards: { Copper: 1, Estate: 1 },
+      totalCount: 1,
+      outsideCount: 1
+    }
+  ]);
+});
+
 test("anonymous discard to draw move preserves ownership but degrades location identity", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.applySnapshot(
@@ -992,7 +1250,7 @@ test("Courtyard draw and put-back loop keeps hero draw exact despite stale snaps
   assert.equal(knowledge?.unknownLocatedCount, 0);
 });
 
-test("hero draw zone is exact instead of showing stale known cards with candidates", () => {
+test("hero draw zone keeps observed count when owned remainder is too large", () => {
   const tracker = new DeckKnowledgeTracker();
   tracker.restore({
     version: 1,
@@ -1025,12 +1283,20 @@ test("hero draw zone is exact instead of showing stale known cards with candidat
   const [knowledge] = tracker.summary().players;
   const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
-  assert.deepEqual(draw?.knownCards, { Copper: 2, Courtyard: 1, Estate: 3 });
-  assert.equal(draw?.unknownCount, 0);
-  assert.equal(draw?.totalCount, 6);
-  assert.deepEqual(knowledge?.locationCandidateGroups, []);
-  assert.deepEqual(knowledge?.unlocatedKnownCards, {});
-  assert.equal(knowledge?.unknownLocatedCount, 0);
+  assert.deepEqual(draw?.knownCards, {});
+  assert.equal(draw?.unknownCount, 5);
+  assert.equal(draw?.totalCount, 5);
+  assert.deepEqual(knowledge?.locationCandidateGroups, [
+    {
+      zoneKeys: ["2:DrawZone"],
+      zoneNames: ["DrawZone"],
+      knownCards: { Copper: 2, Courtyard: 1, Estate: 3 },
+      totalCount: 5,
+      outsideCount: 1
+    }
+  ]);
+  assert.deepEqual(knowledge?.unlocatedKnownCards, { Copper: 2, Courtyard: 1, Estate: 3 });
+  assert.equal(knowledge?.unknownLocatedCount, 5);
 });
 
 test("new topdeck logs reveal additional matching cards already known in draw", () => {

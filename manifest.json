@@ -10,6 +10,7 @@
     "128": "icons/icon-128.png"
   },
   "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:9237/*", "http://localhost:9237/*"],
   "content_scripts": [
     {
       "matches": ["https://dominion.games/*"],

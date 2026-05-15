@@ -114,6 +114,22 @@ Known useful fields:
 
 The content-side tracker lives in `src/knowledge.ts`.
 
+### Invariant reports
+
+The content script checks exact observed `HandZone` and `DrawZone` counts against the knowledge model after card moves and snapshots. When a mismatch appears, it stores an invariant report in `chrome.storage.local`, logs it to the console, and repairs the tracked zone counts so the UI keeps matching the observed hand/draw sizes.
+
+While `npm run dev` is running, a local report sink also mirrors those reports by game id into:
+
+```sh
+dist/invariant-reports/<game-id>/
+```
+
+That `dist/` path is a symlink to the repo-root `invariant-reports/` directory, so reports survive rebuilds of the unpacked extension.
+
+`<game-id>` uses the Dominion game number when the page exposes one, and falls back to the probe's generated game instance id. Repeated reports for the same active violation fingerprint are suppressed until the invariant passes once.
+
+Chrome extensions cannot directly write arbitrary files back into their unpacked extension directory, so the file mirror is provided by the dev watcher. Without the watcher, the reports remain available in extension storage and the page console.
+
 ## Card Data
 
 The machine-readable card text and tracker audit live in one file:

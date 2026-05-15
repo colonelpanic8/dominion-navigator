@@ -42,11 +42,24 @@ export type KnowledgeSummary = {
   players: PlayerDeckKnowledge[];
 };
 
+export type ZoneCountReconciliation = {
+  player: PlayerSummary;
+  zoneKey: string;
+  zoneName: string;
+  previousTotal: number;
+  observedTotal: number;
+  previousKnownCards: CardCounter;
+  previousUnknownCount: number;
+  nextUnknownCount: number;
+  relocatedKnownCards: CardCounter;
+};
+
 export type SerializedZoneKnowledge = {
   zoneKey: string;
   zoneName: string;
   knownCards: CardCounter;
   unknownCount: number;
+  locationInferenceBlocked?: boolean;
 };
 
 export type SerializedPlayerKnowledge = {
@@ -78,6 +91,7 @@ type MutableZoneKnowledge = {
   zoneName: string;
   knownCards: Map<string, number>;
   unknownCount: number;
+  locationInferenceBlocked?: boolean;
 };
 
 type DerivedZoneKnowledge = {
@@ -86,6 +100,7 @@ type DerivedZoneKnowledge = {
   knownCards: Map<string, number>;
   unknownCount: number;
   ambiguousCount: number;
+  locationInferenceBlocked?: boolean;
 };
 
 type DerivedKnowledge = {
@@ -279,15 +294,20 @@ export class DeckKnowledgeTracker {
     const toPlayerKey = playerKey(move.to?.owner);
     const fromOwned = hasPlayerOwner(move.from);
     const toOwned = hasPlayerOwner(move.to);
+    if (this.applyObservedRevealReturnToDraw(move, names, count, fromPlayerKey, toPlayerKey)) return;
+
+    const observedTransfer = this.capMoveToObservedDestinationDelta(move, names, count, toPlayerKey);
+    const moveNames = observedTransfer.names;
+    const moveCount = observedTransfer.count;
 
     if (fromPlayerKey && move.from) {
       const fromPlayer = this.players.get(fromPlayerKey);
-      if (fromPlayer) this.removeFromZone(fromPlayer, move.from, names, count);
+      if (fromPlayer) this.removeFromZone(fromPlayer, move.from, moveNames, moveCount);
     }
 
     if (toPlayerKey && move.to) {
       const toPlayer = this.ensurePlayer(move.to.owner);
-      const transfer = this.transferableCardsForDestination(toPlayer, move, names, count, fromPlayerKey, toPlayerKey);
+      const transfer = this.transferableCardsForDestination(toPlayer, move, moveNames, moveCount, fromPlayerKey, toPlayerKey);
       this.addToZone(toPlayer, move.to, transfer.names, transfer.count);
 
       if ((!fromOwned || fromPlayerKey !== toPlayerKey) && !isControlledOnlyDestination(move.to)) {
@@ -298,7 +318,17 @@ export class DeckKnowledgeTracker {
 
     if (fromPlayerKey && fromOwned && (!toOwned || fromPlayerKey !== toPlayerKey)) {
       const fromPlayer = this.players.get(fromPlayerKey);
-      if (fromPlayer) this.removeFromOwnedLedger(fromPlayer, names, count);
+      if (fromPlayer) this.removeFromOwnedLedger(fromPlayer, moveNames, moveCount);
+    }
+
+    if (fromPlayerKey && move.from?.zoneName === "DrawZone") {
+      const fromPlayer = this.players.get(fromPlayerKey);
+      if (fromPlayer) this.reconcileImplicitDrawRefill(fromPlayer, move.from);
+    }
+
+    if (fromPlayerKey && move.from) {
+      const fromPlayer = this.players.get(fromPlayerKey);
+      if (fromPlayer) this.reconcileObservedSourceDepletion(fromPlayer, move, fromPlayerKey, toPlayerKey);
     }
   }
 
@@ -312,6 +342,7 @@ export class DeckKnowledgeTracker {
 
     zone.unknownCount -= 1;
     increment(zone.knownCards, cardName);
+    if (zone.unknownCount === 0) zone.locationInferenceBlocked = false;
 
     this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
     return true;
@@ -345,6 +376,7 @@ export class DeckKnowledgeTracker {
       if (revealCount <= 0) continue;
       zone.unknownCount -= revealCount;
       increment(zone.knownCards, cardName, revealCount);
+      if (zone.unknownCount === 0) zone.locationInferenceBlocked = false;
       changed = true;
     }
 
@@ -367,6 +399,7 @@ export class DeckKnowledgeTracker {
     const alreadySatisfied = zone.unknownCount === 0 && countersEqual(zone.knownCards, nextKnownCards);
     zone.knownCards = nextKnownCards;
     zone.unknownCount = 0;
+    zone.locationInferenceBlocked = false;
 
     if (!alreadySatisfied) {
       this.identifyUnknownOwnedCardsFromLocations(player);
@@ -396,7 +429,8 @@ export class DeckKnowledgeTracker {
           zoneKey: zone.zoneKey,
           zoneName: zone.zoneName,
           knownCards: toObject(zone.knownCards),
-          unknownCount: zone.unknownCount
+          unknownCount: zone.unknownCount,
+          ...(zone.locationInferenceBlocked ? { locationInferenceBlocked: true } : {})
         }))
       }))
     };
@@ -422,7 +456,8 @@ export class DeckKnowledgeTracker {
               zoneKey: zone.zoneKey,
               zoneName: zone.zoneName,
               knownCards: counterFromObject(zone.knownCards),
-              unknownCount: zone.unknownCount
+              unknownCount: zone.unknownCount,
+              ...(zone.locationInferenceBlocked ? { locationInferenceBlocked: true } : {})
             }
           ])
         )
@@ -435,6 +470,46 @@ export class DeckKnowledgeTracker {
     this.initialized = true;
     this.gameInstanceId = snapshot.gameInstanceId;
     this.applySnapshot(snapshot);
+  }
+
+  reconcileObservedZoneCounts(
+    zones: Array<Pick<ZoneSummary, "index" | "zoneName" | "owner" | "cardCount">>
+  ): ZoneCountReconciliation[] {
+    const reconciliations: ZoneCountReconciliation[] = [];
+
+    for (const observed of zones) {
+      const key = playerKey(observed.owner);
+      if (!key || observed.cardCount < 0 || isEventSourcedZone(observed.zoneName)) continue;
+      const player = this.players.get(key);
+      if (!player) continue;
+      const zone = player.zones.get(zoneKey(observed)) ?? (observed.cardCount > 0 ? this.getOrCreateZone(player, observed) : undefined);
+      if (!zone) continue;
+
+      const previousUnknownCount = zone.unknownCount;
+      const previousTotal = mapTotal(zone.knownCards) + zone.unknownCount;
+      if (previousTotal === observed.cardCount) continue;
+
+      const previousKnownCards = cloneCounter(zone.knownCards);
+      zone.knownCards.clear();
+      zone.unknownCount = observed.cardCount;
+      zone.locationInferenceBlocked = true;
+
+      reconciliations.push({
+        player: player.player,
+        zoneKey: zone.zoneKey,
+        zoneName: zone.zoneName,
+        previousTotal,
+        observedTotal: observed.cardCount,
+        previousKnownCards: toObject(previousKnownCards),
+        previousUnknownCount,
+        nextUnknownCount: zone.unknownCount,
+        relocatedKnownCards: toObject(previousKnownCards)
+      });
+
+      this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
+    }
+
+    return reconciliations;
   }
 
   private initializeFromSnapshot(snapshot: NavigatorSnapshot): void {
@@ -496,6 +571,7 @@ export class DeckKnowledgeTracker {
     } else {
       zoneKnowledge.knownCards = knownCards;
       zoneKnowledge.unknownCount = unknownCount;
+      zoneKnowledge.locationInferenceBlocked = false;
     }
     player.zones.set(key, zoneKnowledge);
 
@@ -530,6 +606,7 @@ export class DeckKnowledgeTracker {
     if (existing) {
       addCounter(existing.knownCards, from.knownCards);
       existing.unknownCount += from.unknownCount;
+      existing.locationInferenceBlocked = Boolean(existing.locationInferenceBlocked || from.locationInferenceBlocked);
     } else {
       player.zones.set(toKey, {
         ...from,
@@ -539,7 +616,7 @@ export class DeckKnowledgeTracker {
     player.zones.delete(fromKey);
   }
 
-  private getOrCreateZone(player: MutablePlayerKnowledge, zone: ZoneSummary): MutableZoneKnowledge {
+  private getOrCreateZone(player: MutablePlayerKnowledge, zone: Pick<ZoneSummary, "index" | "zoneName">): MutableZoneKnowledge {
     const key = zoneKey(zone);
     const existing = player.zones.get(key);
     if (existing) return existing;
@@ -572,6 +649,140 @@ export class DeckKnowledgeTracker {
     const to = this.getOrCreateZone(player, zone);
     for (const name of names) increment(to.knownCards, name);
     to.unknownCount += Math.max(0, count - names.length);
+  }
+
+  private applyObservedRevealReturnToDraw(
+    move: CardMoveSummary,
+    names: string[],
+    count: number,
+    fromPlayerKey: string | undefined,
+    toPlayerKey: string | undefined
+  ): boolean {
+    if (!move.from || !move.to || !toPlayerKey || fromPlayerKey !== toPlayerKey) return false;
+    if (move.from.zoneName !== "RevealZone" || move.to.zoneName !== "DrawZone") return false;
+    if (move.to.cardCount <= 0) return false;
+
+    const player = this.players.get(toPlayerKey);
+    if (!player) return false;
+
+    const drawZone = this.getOrCreateZone(player, move.to);
+    const observedDelta = move.to.cardCount - this.zoneTotal(drawZone);
+    if (observedDelta >= count) return false;
+
+    this.removeFromZone(player, move.from, names, count);
+
+    const knownFinalCards = names.slice(0, Math.min(names.length, move.to.cardCount));
+    drawZone.knownCards = counterFromNames(knownFinalCards);
+    drawZone.unknownCount = move.to.cardCount - knownFinalCards.length;
+    drawZone.locationInferenceBlocked = drawZone.unknownCount > 0 || knownFinalCards.length < Math.min(count, move.to.cardCount);
+
+    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
+    return true;
+  }
+
+  private capMoveToObservedDestinationDelta(
+    move: CardMoveSummary,
+    names: string[],
+    count: number,
+    toPlayerKey: string | undefined
+  ): { names: string[]; count: number } {
+    if (!move.to || !toPlayerKey || (move.to.zoneName !== "DrawZone" && move.to.zoneName !== "HandZone")) return { names, count };
+    if (move.to.cardCount <= 0) return { names, count };
+    const player = this.players.get(toPlayerKey);
+    if (!player) return { names, count };
+
+    const zone = this.getOrCreateZone(player, move.to);
+    const currentTotal = this.zoneTotal(zone);
+    if (move.to.cardCount < currentTotal) return { names, count };
+
+    const observedDelta = move.to.cardCount - currentTotal;
+    if (observedDelta >= count) return { names, count };
+
+    return {
+      names: names.slice(0, Math.min(names.length, observedDelta)),
+      count: observedDelta
+    };
+  }
+
+  private reconcileImplicitDrawRefill(player: MutablePlayerKnowledge, observedDrawZone: ZoneSummary): void {
+    const drawZone = this.getOrCreateZone(player, observedDrawZone);
+    const currentTotal = this.zoneTotal(drawZone);
+    if (currentTotal >= observedDrawZone.cardCount) return;
+
+    const missingCount = observedDrawZone.cardCount - currentTotal;
+    const movedFromDiscard = this.moveAnonymousCardsFromDiscardToDraw(player, drawZone, missingCount);
+    const stillMissing = missingCount - movedFromDiscard;
+    if (stillMissing > 0) {
+      drawZone.unknownCount += stillMissing;
+      drawZone.locationInferenceBlocked = true;
+    }
+  }
+
+  private moveAnonymousCardsFromDiscardToDraw(
+    player: MutablePlayerKnowledge,
+    drawZone: MutableZoneKnowledge,
+    count: number
+  ): number {
+    let remaining = count;
+
+    for (const discardZone of player.zones.values()) {
+      if (discardZone.zoneName !== "DiscardZone") continue;
+
+      const unknownMoved = Math.min(discardZone.unknownCount, remaining);
+      discardZone.unknownCount -= unknownMoved;
+      drawZone.unknownCount += unknownMoved;
+      remaining -= unknownMoved;
+      if (remaining <= 0) return count;
+
+      for (const [card, cardCount] of [...discardZone.knownCards.entries()]) {
+        if (remaining <= 0) return count;
+        const moved = Math.min(cardCount, remaining);
+        decrement(discardZone.knownCards, card, moved);
+        drawZone.unknownCount += moved;
+        drawZone.locationInferenceBlocked = true;
+        remaining -= moved;
+      }
+    }
+
+    return count - remaining;
+  }
+
+  private reconcileObservedSourceDepletion(
+    player: MutablePlayerKnowledge,
+    move: CardMoveSummary,
+    fromPlayerKey: string | undefined,
+    toPlayerKey: string | undefined
+  ): void {
+    if (!move.from || !this.hasExactObservedCount(move.from)) return;
+
+    const source = this.getOrCreateZone(player, move.from);
+    const currentTotal = this.zoneTotal(source);
+    if (currentTotal <= move.from.cardCount) return;
+
+    const excess = currentTotal - move.from.cardCount;
+    this.removeUnknownOrAnonymizeKnown(source, excess);
+    source.locationInferenceBlocked = true;
+
+    if (fromPlayerKey === toPlayerKey && move.to && move.to.cardCount > 0) {
+      const destination = this.getOrCreateZone(player, move.to);
+      const destinationMissing = Math.min(excess, Math.max(0, move.to.cardCount - this.zoneTotal(destination)));
+      if (destinationMissing > 0) {
+        destination.unknownCount += destinationMissing;
+        destination.locationInferenceBlocked = true;
+      }
+    }
+
+    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
+  }
+
+  private hasExactObservedCount(zone: ZoneSummary): boolean {
+    if (zone.zoneName !== "DrawZone" && zone.zoneName !== "HandZone") return false;
+    if (zone.cardCount > 0) return true;
+    return zone.cardCount === 0 && zone.stackCount === 0 && zone.topCards.length === 0;
+  }
+
+  private zoneTotal(zone: Pick<MutableZoneKnowledge, "knownCards" | "unknownCount">): number {
+    return mapTotal(zone.knownCards) + zone.unknownCount;
   }
 
   private transferableCardsForDestination(
@@ -756,7 +967,8 @@ export class DeckKnowledgeTracker {
       zoneName: zone.zoneName,
       knownCards: cloneCounter(zone.knownCards),
       unknownCount: zone.unknownCount,
-      ambiguousCount: 0
+      ambiguousCount: 0,
+      ...(zone.locationInferenceBlocked ? { locationInferenceBlocked: true } : {})
     }));
 
     if (player.totalUnknownOwned > 0) return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
@@ -765,6 +977,9 @@ export class DeckKnowledgeTracker {
 
     const zonesWithAnonymousCards = zones.filter((zone) => zone.unknownCount > 0);
     if (zonesWithAnonymousCards.length === 0) return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
+    if (zonesWithAnonymousCards.some((zone) => zone.locationInferenceBlocked)) {
+      return { zones, ambiguousLocationGroups: [], locationCandidateGroups: [] };
+    }
 
     const anonymousTotal = zonesWithAnonymousCards.reduce((total, zone) => total + zone.unknownCount, 0);
 
@@ -850,6 +1065,9 @@ export class DeckKnowledgeTracker {
     }
 
     const drawZone = drawZones[0]!;
+    if (drawZone.locationInferenceBlocked) return;
+    const observedDrawTotal = mapTotal(drawZone.knownCards) + drawZone.unknownCount + drawZone.ambiguousCount;
+    if (mapTotal(remainder) !== observedDrawTotal) return;
     drawZone.knownCards = remainder;
     drawZone.unknownCount = 0;
     drawZone.ambiguousCount = 0;
