@@ -44,8 +44,10 @@ function pileCosts(view: AgentView): Map<string, Cost> {
   );
 }
 
+const AUTOPLAY = "Autoplay Treasures";
+
 /** Buying and gaining are decided by price, so those options carry the pile's current cost. */
-function decision(value: Decision, costs: Map<string, Cost>): string[] {
+function decision(value: Decision, costs: Map<string, Cost>, buys: number | undefined): string[] {
   const priced = (group: number): boolean => /buy|gain/.test(value.groups[group]?.kind ?? "");
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
@@ -61,6 +63,10 @@ function decision(value: Decision, costs: Map<string, Cost>): string[] {
       const price = option.card && priced(option.group) ? costs.get(option.card) : undefined;
       lines.push(`    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${option.kind === "decline" ? " (decline)" : ""}`);
     }
+  }
+  const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
+  if (autoplay && buys !== undefined && buys > 1 && value.groups.some((group) => group.kind === "buy")) {
+    lines.push(`  NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, choose ${autoplay.index} (${AUTOPLAY}) first.`);
   }
   return lines;
 }
@@ -126,7 +132,7 @@ function blocks(view: AgentView): Block[] {
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
-  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view)), always: true });
+  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view), turn.buys), always: true });
   return result;
 }
 

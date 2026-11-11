@@ -14,7 +14,7 @@ export const INSTRUCTIONS = [
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0.",
-  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays the treasures it needs first.",
+  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
   "Counts marked unknown are cards this player cannot know. Views never contain hidden information.",
   "`inspect` reads raw client state for debugging and can show more than a player may know, so do not use it to choose plays."

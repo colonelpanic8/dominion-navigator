@@ -220,3 +220,12 @@ test("the status says what the hand's treasures make and the score is always pri
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
   assert.match(text, new RegExp(`^ {4}${silver.index}: Silver \\$3$`, "m"));
 });
+
+test("a buy with more than one Buy points at Autoplay Treasures", () => {
+  const autoplay = firstBuy.decision!.options.find((option) => option.label === "Autoplay Treasures")!;
+  const note = new RegExp(`^ {2}NOTE buying a card plays only the treasures that card needs .* With 2 buys, choose ${autoplay.index} \\(Autoplay Treasures\\) first\\.$`, "m");
+  assert.match(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 } }), note);
+  assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
+  const played = { ...firstBuy.decision!, options: firstBuy.decision!.options.filter((option) => option !== autoplay) };
+  assert.doesNotMatch(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 }, decision: played }), /^ {2}NOTE /m);
+});
