@@ -6,6 +6,8 @@ export type AngularLike = {
     injector: () => {
       get: (name: string) => unknown;
     };
+    /** Holds a component's controller under `$<componentName>Controller`. */
+    data?: () => Record<string, unknown> | undefined;
   };
 };
 
@@ -148,6 +150,18 @@ export type RuntimeTableService = {
   openSeatCount?: () => number;
   ready?: () => void;
   leave?: () => void;
+  addBot?: () => void;
+  getRuleValue?: (ruleId: RuntimeEnumValue) => unknown;
+};
+
+/** One entry of the table's REQUIRED_CARDS rule: a named card, or a random landscape slot. */
+export type RuntimeRequiredCard = {
+  cardName?: RuntimeCardName;
+};
+
+export type RuntimeKingdomService = {
+  /** Requires several cards or landscapes in one rule change. `mode` is CardNames.BACK for a plain pick. */
+  addMultiple?: (picks: Array<{ card: RuntimeCardName; mode: RuntimeCardName }>) => void;
 };
 
 export type RuntimeAutomatch = {
@@ -164,6 +178,7 @@ export type RuntimeServices = {
   tableService: RuntimeTableService;
   automatch: RuntimeAutomatch;
   serverMessenger: RuntimeServerMessenger;
+  kingdomService: RuntimeKingdomService;
 };
 
 export type RuntimeGame = {
@@ -206,6 +221,7 @@ export type DominionGlobals = {
   };
   QuestionTypes?: Record<string, RuntimeEnumValue>;
   QuestionIds?: Record<string, RuntimeEnumValue>;
+  TableRuleIds?: Record<string, RuntimeEnumValue>;
   DeclineButtonIds?: Record<string, RuntimeEnumValue>;
   getByOrdinal?: (enumObject: Record<string, RuntimeEnumValue>, ordinal: number) => RuntimeEnumValue | undefined;
   getOrdinal?: (enumObject: Partial<Record<string, RuntimeCardName>>, value: RuntimeCardName) => number;
@@ -229,6 +245,12 @@ export function getService<Name extends keyof RuntimeServices>(name: Name): Runt
   } catch {
     return undefined;
   }
+}
+
+/** The controller of the first `tag` component in the page, e.g. ("kingdom-rules", "$kingdomRulesController"). */
+export function getComponentController<Controller>(tag: string, key: string): Controller | undefined {
+  const element = document.querySelector(tag);
+  return element ? (dominion.angular?.element(element).data?.()?.[key] as Controller | undefined) : undefined;
 }
 
 export function getGame(): RuntimeGame | undefined {

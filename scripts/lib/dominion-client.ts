@@ -14,7 +14,7 @@ type NavigatorApi = {
   getSession(): SessionState;
   getLog(options: { afterIndex?: number; limit?: number }): LogPage;
   inspect(path: string, options: InspectOptions): InspectResult;
-  startBotGame(bots: number): ActionResult;
+  startBotGame(options: { bots: number; kingdom?: string[] }): ActionResult;
   resign(): ActionResult;
 };
 

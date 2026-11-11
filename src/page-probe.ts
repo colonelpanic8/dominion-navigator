@@ -5,7 +5,7 @@ import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot } from "./messages";
 import { AgentBridge, WaitResult } from "./probe/agent-bridge";
 import { showDrawKnowledgeWindow } from "./probe/knowledge-modal";
 import { DominionGlobals, getGame, getService, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
-import { readSession, resignGame, startBotGame } from "./probe/session";
+import { NewGameOptions, readSession, resignGame, startBotGame } from "./probe/session";
 import type { AnswerResult } from "./probe/questions";
 import { GAME_NOT_READY, postStatus } from "./probe/status";
 import { gameFingerprint, makeMoveSummary, makeSnapshot } from "./probe/summaries";
@@ -28,7 +28,7 @@ type ProbeState = {
   getSession: () => SessionState;
   getLog: (options?: { afterIndex?: number; limit?: number }) => LogPage;
   inspect: (path: string, options?: InspectOptions) => InspectResult;
-  startBotGame: (bots: number) => Promise<ActionResult>;
+  startBotGame: (options: NewGameOptions) => Promise<ActionResult>;
   resign: () => Promise<ActionResult>;
 };
 

@@ -177,11 +177,19 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     },
     {
       name: "new_game",
-      description: "Starts an unrated game against bots with a random kingdom, from the lobby, a table, or a finished game. Fails while a game is still in progress.",
-      inputSchema: { type: "object", properties: { bots: { type: "integer", description: "Number of bot opponents, 1 to 3 (default 1)." } } },
+      description:
+        "Starts an unrated game against bots, from the lobby, a table, or a finished game. The kingdom is random unless `kingdom` names cards or landscapes it must contain. Fails while a game is still in progress.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          bots: { type: "integer", description: "Number of bot opponents, 1 to 3 (default 1). A chosen kingdom needs 1." },
+          kingdom: { type: "array", items: { type: "string" }, description: "Card and landscape names to require; the rest is filled at random." }
+        }
+      },
       async run(args) {
         const bots = integer(args, "bots", { min: 1, max: 3 }) ?? 1;
-        const result = await client.call("startBotGame", [bots], { timeoutMs: START_GAME_TIMEOUT_MS });
+        const kingdom = args.kingdom === undefined ? undefined : list(args, "kingdom", "string");
+        const result = await client.call("startBotGame", [{ bots, ...(kingdom ? { kingdom } : {}) }], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not start a game: ${result.error}`);
         return settle(DEFAULT_WAIT_S * 1000, "full");
       }
