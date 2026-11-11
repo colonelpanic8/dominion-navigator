@@ -3,11 +3,14 @@ import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from ".
 import type { AgentView, Decision, SessionState } from "../../src/agent/types";
 import { resolveChoose } from "./choose-labels";
 import type { DominionClient, WaitResult } from "./dominion-client";
+import type { GameLog } from "./game-log";
 import type { Tool } from "./mcp-stdio";
 
 export type DominionToolOptions = {
   /** Let `step` answer decisions in games that seat human opponents. */
   allowHumanOpponents?: boolean;
+  /** Where answered decisions and results are recorded, when set. */
+  gameLog?: GameLog;
 };
 
 export const INSTRUCTIONS = [
@@ -15,6 +18,7 @@ export const INSTRUCTIONS = [
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the options to choose; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
   "Choose options by label rather than number: option numbers change from one decision to the next. A label matches without case, e.g. \"Silver\"; when a label is in more than one group, prefix the group kind, as in \"buy:Silver\" or \"play:Copper\". Repeat a label to take several options with it: [\"Copper\", \"Copper\"] plays two Coppers. A label that matches nothing, or matches options in different groups, fails without acting and lists the options. Numbers still work, and both can be mixed.",
+  "`step` takes an optional `reason`, a short note on why you chose what you did; it is kept in the game log when the server keeps one.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0. When a decision says to answer from ONE of a list of group sets, take options from one set only (groups joined by + may be answered together); the other groups need no answer.",
   "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money. The buy list does not count treasures whose value is not fixed, such as Bank, and Autoplay may skip them; play those, and treasures that do more than make money, one at a time before buying.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
@@ -49,6 +53,13 @@ function integer(args: Record<string, unknown>, name: string, bounds: { min: num
 function text(args: Record<string, unknown>, name: string): string {
   const value = args[name];
   if (typeof value !== "string" || !value) throw new Error(`${name} must be a non-empty string`);
+  return value;
+}
+
+function optionalText(args: Record<string, unknown>, name: string): string | undefined {
+  const value = args[name];
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") throw new Error(`${name} must be a string`);
   return value;
 }
 
@@ -99,6 +110,7 @@ const GAME_OVER = "The game is over. Call new_game to play again.";
 const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
 
 export function createDominionTools(client: Pick<DominionClient, "call">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
+  const { gameLog } = options;
   /** What the caller was last shown, which deltas and new log lines are taken against. */
   let shown: { view: AgentView; logIndex: number } | undefined;
   /** Cards whose text the caller was given in the current game. */
@@ -157,8 +169,10 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       if (!decision || !forced) break;
       const result = await client.call("answer", [decision.id, forced]);
       if (!result.ok) break;
+      gameLog?.decision(wait.view, decision, forced, undefined, "auto");
       lines.push(`AUTO ${decision.id}: ${decision.prompt} -> ${decision.options[0]!.label}`);
     }
+    gameLog?.result(wait.view);
     lines.push(...(await present(wait.view, mode, signal)));
     if (wait.status === "timeout") lines.push("No decision for you yet. Call wait to keep waiting.");
     if (wait.status === "game-over") lines.push(GAME_OVER);
@@ -188,6 +202,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
           return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
         }
         if (!view.game.running && view.game.result) {
+          gameLog?.result(view);
           return [describeSession(session), renderGameOverText(view, view.game.result), GAME_OVER].join("\n");
         }
         return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
@@ -207,6 +222,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
             description:
               'Options to choose, by label (safer: numbers change between decisions) or number. A label matches without case and may be prefixed by its group kind, as in "buy:Silver" or "play:Copper"; repeat a label to take several options with it. Empty selects nothing.'
           },
+          reason: { type: "string", description: "Optional: why you chose this, kept in the game log." },
           timeout_s: timeoutProperty
         },
         required: ["decision", "choose"]
@@ -214,6 +230,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       async run(args, signal) {
         const decision = text(args, "decision");
         const choose = choices(args);
+        const reason = optionalText(args, "reason");
         const timeoutMs = waitMs(args);
         if (!(await mayActInGame())) throw new Error(HUMAN_OPPONENTS);
         const openView = shown?.view.decision?.id === decision ? shown.view : await client.call("getAgentView", []);
@@ -227,6 +244,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         const indices = open ? resolveChoose(open, choose) : (choose as number[]);
         const result = await client.call("answer", [decision, indices]);
         if (!result.ok) throw await rejected(result.error);
+        if (open) gameLog?.decision(openView, open, indices, reason);
         const next = await settle(timeoutMs, "delta", true, signal);
         return open ? `${describeChoice(open, indices)}\n${next}` : next;
       }
@@ -270,7 +288,9 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       async run(_args, signal) {
         const result = await client.call("resign", [], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not resign: ${result.error}`);
-        return (await present(await client.call("getAgentView", []), "delta", signal)).join("\n");
+        const view = await client.call("getAgentView", []);
+        gameLog?.result(view);
+        return (await present(view, "delta", signal)).join("\n");
       }
     },
     {

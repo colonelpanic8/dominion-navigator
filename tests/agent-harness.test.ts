@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveChoose } from "../scripts/lib/choose-labels";
 import { createDominionTools } from "../scripts/lib/dominion-tools";
+import { GameLog } from "../scripts/lib/game-log";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
 import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../src/agent/render-text";
@@ -135,6 +139,44 @@ test("step chooses options by label, and refuses a label that is unknown or name
   const result = await tool(tools, "step").run({ decision: decision.id, choose: ["buy:silver"] }, live);
   assert.deepEqual(answers, [[decision.id, index("buy", "Silver")]]);
   assert.ok(result.startsWith(`CHOSE ${decision.id}: [buy] Silver\n`));
+});
+
+test("a game log records each answer with its reason, AUTO answers and the result, and never fails a call", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "dominion-game-log-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const gameLog = new GameLog(dir);
+  const { client } = fakeClient([startGame, firstBuy, secondBuy]);
+  const tools = createDominionTools(client, cardData, { gameLog });
+  await tool(tools, "wait").run({}, live);
+  await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: ["buy:Silver"], reason: "money first" }, live);
+  const result = { players: [{ name: "colonelpanic8", rank: 1, points: 30, turns: 18, resigned: false }, { name: "Lord Rattington", rank: 2, points: 24, turns: 18, resigned: false }] };
+  const over: AgentView = { ...secondBuy, game: { ...secondBuy.game, running: false, result }, decision: null };
+  const finished = createDominionTools(fakeClient([over]).client, cardData, { gameLog });
+  await tool(finished, "state").run({}, live);
+  await tool(finished, "state").run({}, live);
+  await gameLog.flush();
+
+  const game = firstBuy.game.number!;
+  const records = (await readFile(join(dir, `${game}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(records.map((record) => record.type), ["auto", "decision", "result"]);
+  const silver = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
+  assert.deepEqual(
+    { ...records[1], time: undefined },
+    { type: "decision", time: undefined, game, turn: 1, decision: "d2", prompt: firstBuy.decision!.prompt, groups: ["buy", "play", "button"], chosen: [{ index: silver, label: "Silver", group: "buy" }], reason: "money first" }
+  );
+  assert.deepEqual(records[2].result, result);
+  assert.deepEqual((await readFile(join(dir, `${game}.md`), "utf8")).trim().split("\n"), [
+    `- T0 (auto) ${startGame.decision!.groups[0]!.kind}: Start Game`,
+    "- T1 buy: Silver — money first",
+    "- Result: 1. colonelpanic8 30 VP in 18 turns, 2. Lord Rattington 24 VP in 18 turns"
+  ]);
+
+  const errors = t.mock.method(console, "error", () => {});
+  const broken = new GameLog(join(dir, `${game}.md`));
+  const { client: other } = fakeClient([firstBuy, secondBuy]);
+  await tool(createDominionTools(other, cardData, { gameLog: broken }), "step").run({ decision: firstBuy.decision!.id, choose: ["buy:Silver"] }, live);
+  await broken.flush();
+  assert.match(String(errors.mock.calls[0]?.arguments[0]), /could not write the game log/);
 });
 
 test("step does not act against human opponents unless that is allowed", async () => {

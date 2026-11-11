@@ -157,6 +157,13 @@ node --import tsx scripts/mcp-server.ts
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
 
+`step` also takes an optional `reason`, a short note on why the agent chose what it did. Start the server with `--game-log-dir <dir>` (or set `DOMINION_GAME_LOG_DIR`) to keep a log of each game under that directory, named by game number:
+
+- `<game>.jsonl` has one JSON record per line: a `decision` record for each answered decision (time, game number, turn, decision id and prompt, group kinds, the chosen options' labels, numbers and groups, and the `reason` if one was given), an `auto` record for each decision answered for the agent, and a `result` record once the game's result is shown.
+- `<game>.md` has one readable line per record, such as `- T5 buy: Silver — money before Gold`.
+
+Without the flag nothing is written. A failed write is reported on stderr and never fails the tool call.
+
 An extra turn is marked on the status line, as in `turn 12 (extra turn: seize the day)`, and a pile's Trait on the pile and on options for its cards, as in `Old Witch $5 [trait: Reckless]`. A finished game's `RESULT` gives each player's turns and, when the supply or a resignation shows it, how the game ended. In the buy phase, a `NOTE` names the unplayed treasures the buy list does not count (a value that is not fixed, such as Bank's) or that buying would never play (one that does more than make money), with the options that play them.
 
 State the view has no field for (tokens, counters on piles or cards, bought projects, reminders, who controls the turn) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
