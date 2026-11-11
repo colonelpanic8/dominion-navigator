@@ -51,8 +51,41 @@ function pileCosts(view: AgentView): Map<string, Cost> {
 
 const AUTOPLAY = "Autoplay Treasures";
 
-/** Every card option carries its cost, from the client or else from its pile. */
-function decision(value: Decision, costs: Map<string, Cost>, buys: number | undefined): string[] {
+function pileTypes(view: AgentView): Map<string, string[]> {
+  return new Map([...view.supply, ...view.nonSupply, ...view.landscapes].map((pile) => [pile.card, pile.types] as const));
+}
+
+/** Things a decision's options do not say on their own that agents have tripped on. */
+function decisionNotes(view: AgentView, value: Decision): string[] {
+  const notes: string[] = [];
+  const buyGroup = value.groups.find((group) => group.kind === "buy");
+  if (!buyGroup) return notes;
+  const buyOptions = value.options.filter((option) => option.group === buyGroup.group);
+  const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
+  const playFirst = autoplay ? `choose ${autoplay.index} (${AUTOPLAY}) first` : "play your treasures first";
+  const buys = view.turn.buys;
+  if (autoplay && buys !== undefined && buys > 1) {
+    notes.push(`NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, ${playFirst}.`);
+  }
+  const landscapes = new Set(view.landscapes.map((pile) => pile.card));
+  if (view.turn.treasureInHand && buyOptions.some((option) => option.card && landscapes.has(option.card))) {
+    notes.push(
+      `NOTE buying an Event or Project, like buying a card, plays only the treasures its cost needs, and no treasures can be played after any buy. To spend the rest of your money on a later buy, ${playFirst}.`
+    );
+  }
+  const types = pileTypes(view);
+  const night = Object.keys(view.you?.hand.known ?? {}).filter((card) => types.get(card)?.includes("Night"));
+  const endBuys = buyOptions.find((option) => option.kind === "decline");
+  if (night.length && endBuys) {
+    notes.push(`NOTE Night cards are played after the Buy phase. To play ${night.join(", ")}, choose ${endBuys.index} (${endBuys.label}) when done buying; that moves on to the Night phase.`);
+  }
+  return notes;
+}
+
+/** Every card option carries its cost, from the client or else from its pile, and a landscape its type. */
+function decision(view: AgentView, value: Decision): string[] {
+  const costs = pileCosts(view);
+  const landscapeTypes = new Map(view.landscapes.map((pile) => [pile.card, pile.types[0]] as const));
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
@@ -65,13 +98,13 @@ function decision(value: Decision, costs: Map<string, Cost>, buys: number | unde
     else lines.push(`  ${bounds}`);
     for (const option of value.options.filter((item) => item.group === group.group)) {
       const price = option.cost ?? (option.card ? costs.get(option.card) : undefined);
-      lines.push(`    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${option.kind === "decline" ? " (decline)" : ""}`);
+      const landscape = option.card ? landscapeTypes.get(option.card) : undefined;
+      lines.push(
+        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
+      );
     }
   }
-  const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
-  if (autoplay && buys !== undefined && buys > 1 && value.groups.some((group) => group.kind === "buy")) {
-    lines.push(`  NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, choose ${autoplay.index} (${AUTOPLAY}) first.`);
-  }
+  lines.push(...decisionNotes(view, value).map((note) => `  ${note}`));
   return lines;
 }
 
@@ -151,7 +184,7 @@ function blocks(view: AgentView): Block[] {
   }
   const turns = completedTurns(view.sinceLastDecision, view.opponents.map((opponent) => opponent.name));
   if (turns.length) result.push({ kind: "lines", key: "turns", lines: ["OPPONENT TURNS", ...turns.map(turnLine)], always: true });
-  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view), turn.buys), always: true });
+  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view, view.decision), always: true });
   return result;
 }
 

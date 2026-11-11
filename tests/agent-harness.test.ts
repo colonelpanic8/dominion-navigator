@@ -243,3 +243,32 @@ test("a buy with more than one Buy points at Autoplay Treasures", () => {
   const played = { ...firstBuy.decision!, options: firstBuy.decision!.options.filter((option) => option !== autoplay) };
   assert.doesNotMatch(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 }, decision: played }), /^ {2}NOTE /m);
 });
+
+test("a buy list labels Events and Projects and warns that buying one ends treasure play", () => {
+  const decision = firstBuy.decision!;
+  const buyGroup = decision.groups.find((group) => group.kind === "buy")!.group;
+  const borrow = { index: decision.options.length, group: buyGroup, kind: "card" as const, label: "Borrow", card: "Borrow" };
+  const view: AgentView = {
+    ...firstBuy,
+    landscapes: [{ card: "Borrow", count: 1, cost: { coins: 0 }, types: ["Event"] }],
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 3, potions: 0, variable: [] } },
+    decision: { ...decision, options: [...decision.options, borrow] }
+  };
+  const text = renderAgentViewText(view);
+  assert.match(text, new RegExp(`^ {4}${borrow.index}: Borrow \\$0 \\[Event\\]$`, "m"));
+  const autoplay = decision.options.find((option) => option.label === "Autoplay Treasures")!;
+  assert.match(text, new RegExp(`^ {2}NOTE buying an Event or Project.*choose ${autoplay.index} \\(Autoplay Treasures\\) first\\.$`, "m"));
+  const { treasureInHand: _treasureInHand, ...played } = view.turn;
+  assert.doesNotMatch(renderAgentViewText({ ...view, turn: played }), /NOTE buying an Event/);
+});
+
+test("a buy decision says that ending buys leads to the Night phase when Night cards are in hand", () => {
+  const view: AgentView = {
+    ...secondBuy,
+    supply: [...secondBuy.supply, { card: "Monastery", count: 10, cost: { coins: 2 }, types: ["Night"], kingdom: true }],
+    you: { ...secondBuy.you!, hand: { ...secondBuy.you!.hand, known: { ...secondBuy.you!.hand.known, Monastery: 1 } } }
+  };
+  const endBuys = secondBuy.decision!.options.find((option) => option.kind === "decline")!;
+  assert.match(renderAgentViewText(view), new RegExp(`^ {2}NOTE Night cards .* To play Monastery, choose ${endBuys.index} \\(End Buys\\) when done buying; .*Night phase\\.$`, "m"));
+  assert.doesNotMatch(renderAgentViewText(secondBuy), /NOTE Night/);
+});
