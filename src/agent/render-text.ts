@@ -47,6 +47,19 @@ function others(pile: PileView): string {
   return pile.others?.length ? ` (pile also holds ${pile.others.join(", ")})` : "";
 }
 
+function traitLabel(trait: string | undefined): string {
+  return trait ? ` [trait: ${trait}]` : "";
+}
+
+/** The Trait on each card's pile, keyed by every card the pile holds. */
+function traits(view: AgentView): Map<string, string> {
+  return new Map(
+    [...view.supply, ...view.nonSupply]
+      .filter((pile) => pile.trait)
+      .flatMap((pile) => [pile.card, ...(pile.others ?? [])].map((card) => [card, pile.trait!] as const))
+  );
+}
+
 function pileCosts(view: AgentView): Map<string, Cost> {
   return new Map(
     [...view.supply, ...view.nonSupply, ...view.landscapes].filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!] as const)
@@ -106,6 +119,7 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
 /** Every card option carries its cost, from the client or else from its pile, and a landscape its type. */
 function decision(view: AgentView, value: Decision): string[] {
   const costs = pileCosts(view);
+  const cardTraits = traits(view);
   const landscapeTypes = new Map(view.landscapes.map((pile) => [pile.card, pile.types[0]] as const));
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   if (value.alternatives) {
@@ -125,7 +139,7 @@ function decision(view: AgentView, value: Decision): string[] {
       const price = option.cost ?? (option.card ? costs.get(option.card) : undefined);
       const landscape = option.card ? landscapeTypes.get(option.card) : undefined;
       lines.push(
-        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
+        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${traitLabel(option.card && cardTraits.get(option.card))}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
       );
     }
   }
@@ -207,12 +221,12 @@ function blocks(view: AgentView): Block[] {
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
   for (const opponent of view.opponents) result.push({ kind: "lines", key: `player:${opponent.index}`, lines: player("OPPONENT", opponent) });
-  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${others(pile)}` })) });
+  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
   if (view.landscapes.length) {
     result.push({ kind: "piles", key: "landscapes", label: "LANDSCAPES", piles: view.landscapes.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)}` })) });
   }
   if (view.nonSupply.length) {
-    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${others(pile)}` })) });
+    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
   }
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });

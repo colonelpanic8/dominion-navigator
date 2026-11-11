@@ -149,10 +149,10 @@ test("table notes report expansion state the view has no field for, and nothing 
   ];
   const nobody = { index: -1 };
   const nowhere = { pileName: { name: "Back" } };
-  const village = { pileName: { name: "Village" }, attachedTrait: { name: "Cheap" } };
+  const village = { pileName: { name: "Village" } };
   const plain = {
     players: [{ index: 0, name: "Ann" }, players[1]!],
-    zones: [nowhere, { pileName: { name: "Village" }, attachedTrait: { name: "Back" } }],
+    zones: [nowhere, village],
     activeTurn: { ownerId: 0, controllerId: 0, turnType: 0 },
     tokens: [],
     counters: [
@@ -180,8 +180,7 @@ test("table notes report expansion state the view has no field for, and nothing 
     "Embargo Tokens 1 on Village.",
     "VP Tokens 3 on Temple.",
     "Ann has bought Cathedral.",
-    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player).",
-    "Cheap is attached to Village."
+    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player)."
   ]);
 });
 
@@ -310,4 +309,13 @@ test("an extra turn is marked on the status line", () => {
   assert.equal(extraTurnKind(9, turnKinds), "type 9");
   const extra: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, number: 12, extra: "seize the day" } };
   assert.match(renderAgentViewText(extra), /^GAME \d+: turn 12 \(extra turn: seize the day\), your turn, /);
+});
+
+test("a pile's Trait is shown on the pile and on every option for its cards", () => {
+  const view: AgentView = { ...firstBuy, supply: firstBuy.supply.map((pile) => (pile.card === "Witch" ? { ...pile, trait: "Reckless" } : pile)) };
+  const text = renderAgentViewText(view);
+  assert.match(text, /^SUPPLY .*, Witch \$5 x10 \[trait: Reckless\], /m);
+  const witch = view.decision!.options.find((option) => option.card === "Witch")!;
+  assert.match(text, new RegExp(`^ {4}${witch.index}: Witch \\$5 \\[trait: Reckless\\]$`, "m"));
+  assert.match(renderAgentViewDelta(firstBuy, view), /^SUPPLY \(changed\) Witch \$5 x10 \[trait: Reckless\]$/m);
 });

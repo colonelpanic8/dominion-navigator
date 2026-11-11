@@ -60,11 +60,5 @@ export function tableNotes(state: RuntimeState | undefined): string[] {
     const reminders = (player.activeReminders ?? []).map((reminder) => cardLabel(reminder.cardName)).filter(Boolean);
     if (reminders.length) notes.push(`${name} has reminders for ${reminders.join(", ")} (a reminder is a card whose effect is still pending for that player).`);
   }
-
-  for (const zone of state?.zones ?? []) {
-    const trait = cardLabel(zone?.attachedTrait);
-    const pile = pileLabel(zone);
-    if (trait && pile) notes.push(`${trait} is attached to ${pile}.`);
-  }
   return notes;
 }

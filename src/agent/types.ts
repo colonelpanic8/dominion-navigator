@@ -15,6 +15,8 @@ export type PileView = {
   types: string[];
   /** For a split or mixed pile, its other cards, which may lie under the top one. */
   others?: string[];
+  /** The Trait attached to this pile, which applies to every card from it. */
+  trait?: string;
 };
 
 export type SupplyPileView = PileView & {

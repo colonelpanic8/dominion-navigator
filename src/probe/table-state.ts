@@ -42,12 +42,14 @@ function pile(zone: RuntimeZone): PileView | undefined {
   if (!card || card === "Back") return undefined;
   const pileCost = runtimeCost(top);
   const others = splitPileMembers().get(card)?.filter((name) => name !== card);
+  const trait = zone.attachedTrait?.name;
   return {
     card,
     count: zoneCardCount(zone),
     ...(pileCost ? { cost: pileCost } : {}),
     types: (top?.cardName?.types ?? []).map((type) => type.name).filter((name): name is string => Boolean(name)),
-    ...(others?.length ? { others } : {})
+    ...(others?.length ? { others } : {}),
+    ...(trait && trait !== "Back" ? { trait } : {})
   };
 }
 
