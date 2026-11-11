@@ -134,6 +134,9 @@ test("the text rendering lists the decision's options by index", () => {
   assert.match(text, new RegExp(`DECISION ${live.decision!.id}: `));
   for (const option of live.decision!.options) assert.ok(text.includes(`    ${option.index}: ${option.label}`), option.label);
   assert.doesNotMatch(text, /(Coffers|Villagers|VP Tokens|Debt|Favors) 0/);
+  assert.match(text, /^ {2}owns 11 cards: 7 Copper, 2 Estate, Remodel, Silver$/m);
+  const hidden = { ...live, you: { ...live.you!, owned: { known: { Copper: 7 }, unknown: 4 } } };
+  assert.match(renderAgentViewText(hidden), /^ {2}owns 11 cards: 7 Copper; 4 unknown$/m);
 });
 
 test("card text markup is normalized for the glossary", () => {

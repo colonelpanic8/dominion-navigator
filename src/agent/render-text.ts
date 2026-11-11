@@ -28,8 +28,9 @@ function player(label: string, view: PlayerView): string[] {
     lines.push(`  ${group.zones.join("+")} hold ${group.count} of: ${cards(group.candidates)}${outside}`);
   }
   if (Object.keys(view.unlocated).length) lines.push(`  unlocated ${cards(view.unlocated)}`);
-  const owned = cards(view.owned.known);
-  lines.push(`  owns ${owned || "nothing known"}${view.owned.unknown ? `; ${view.owned.unknown} unknown` : ""}`);
+  const ownedCount = Object.values(view.owned.known).reduce((total, count) => total + count, view.owned.unknown);
+  const owned = [cards(view.owned.known), view.owned.unknown ? `${view.owned.unknown} unknown` : ""].filter(Boolean).join("; ");
+  lines.push(`  owns ${ownedCount} card${ownedCount === 1 ? "" : "s"}${owned ? `: ${owned}` : ""}`);
   const counters = Object.entries(view.counters)
     .filter(([, value]) => value !== 0)
     .map(([name, value]) => `${name} ${value}`);
