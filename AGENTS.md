@@ -8,7 +8,7 @@ Play and inspect dominion.games through the `dominion` MCP server (`scripts/mcp-
 - `state` tells you which screen the client is on. `new_game` starts a bot game from any screen, with a chosen kingdom if you pass one.
 - After changing code under `src/`, run `npm run build && npm run reload:extension`. The reload refreshes the tab, and the client reconnects to a running game after a few seconds.
 - `inspect` reads raw client and tracker state. Use it to check the tracker against the client, not to pick plays.
-- The test account owns only the base set. A kingdom with other cards is accepted by the table and then never starts.
+- The test account is `colonelpanic8`. It has a subscription, so a kingdom may use cards from any expansion.
 
 ## Checks
 

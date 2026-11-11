@@ -90,6 +90,19 @@ test("step answers forced decisions itself and then reports only what changed", 
   assert.ok(second.length < renderAgentViewText(secondBuy).length);
 });
 
+test("state summarizes a finished game instead of printing its table", async () => {
+  const result = { players: [{ name: "colonelpanic8", rank: 1, points: 30, turns: 18, resigned: false }, { name: "Lord Rattington", rank: 2, points: 24, turns: 18, resigned: false }] };
+  const over: AgentView = { ...secondBuy, game: { ...secondBuy.game, running: false, result }, decision: null };
+  const { client } = fakeClient([over]);
+  const text = await tool(createDominionTools(client, cardData), "state").run({}, live);
+  assert.match(text, /^GAME \d+ \(over\)$/m);
+  assert.match(text, /^RESULT 1\. colonelpanic8 30 VP, 2\. Lord Rattington 24 VP$/m);
+  assert.match(text, /^YOU: colonelpanic8 \(\d+ VP\) owns \d+ cards: /m);
+  assert.match(text, /^OPPONENT: Lord Rattington \(\d+ VP\) owns \d+ cards: /m);
+  assert.match(text, /Call new_game/);
+  assert.doesNotMatch(text, /^( {2}hand |SUPPLY |LOG$)/m);
+});
+
 test("step refuses a stale decision and shows the one that is open", async () => {
   const { client } = fakeClient([firstBuy]);
   const tools = createDominionTools(client, cardData);
@@ -219,4 +232,13 @@ test("the status says what the hand's treasures make and the score is always pri
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
   assert.match(text, new RegExp(`^ {4}${silver.index}: Silver \\$3$`, "m"));
+});
+
+test("a buy with more than one Buy points at Autoplay Treasures", () => {
+  const autoplay = firstBuy.decision!.options.find((option) => option.label === "Autoplay Treasures")!;
+  const note = new RegExp(`^ {2}NOTE buying a card plays only the treasures that card needs .* With 2 buys, choose ${autoplay.index} \\(Autoplay Treasures\\) first\\.$`, "m");
+  assert.match(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 } }), note);
+  assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
+  const played = { ...firstBuy.decision!, options: firstBuy.decision!.options.filter((option) => option !== autoplay) };
+  assert.doesNotMatch(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 }, decision: played }), /^ {2}NOTE /m);
 });

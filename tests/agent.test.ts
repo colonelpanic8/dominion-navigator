@@ -4,7 +4,9 @@ import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
 import { buildCardGlossary, normalizeCardText } from "../src/agent/glossary";
 import { renderAgentViewText } from "../src/agent/render-text";
+import { completedTurns } from "../src/agent/turn-summary";
 import { RawQuestion, ZoneView } from "../src/agent/types";
+import { neutralZoneKind } from "../src/probe/zone-kind";
 import type { CardCounter, KnowledgeSummary } from "../src/knowledge";
 import { fixture, fixtures, optionIndex, view } from "./live-fixtures";
 
@@ -133,6 +135,9 @@ test("the text rendering lists the decision's options by index", () => {
   assert.match(text, new RegExp(`DECISION ${live.decision!.id}: `));
   for (const option of live.decision!.options) assert.ok(text.includes(`    ${option.index}: ${option.label}`), option.label);
   assert.doesNotMatch(text, /(Coffers|Villagers|VP Tokens|Debt|Favors) 0/);
+  assert.match(text, /^ {2}owns 11 cards: 7 Copper, 2 Estate, Remodel, Silver$/m);
+  const hidden = { ...live, you: { ...live.you!, owned: { known: { Copper: 7 }, unknown: 4 } } };
+  assert.match(renderAgentViewText(hidden), /^ {2}owns 11 cards: 7 Copper; 4 unknown$/m);
 });
 
 test("card text markup is normalized for the glossary", () => {
@@ -144,6 +149,40 @@ test("card text markup is normalized for the glossary", () => {
     }),
     { Witch: { name: "Witch", types: ["Action", "Attack"], expansion: "Base", cost: { coins: 5 }, text: "+2 Cards\nEach other player gains a Curse." } }
   );
+});
+
+test("landscapes and non-supply piles stay out of the supply", () => {
+  // The classes each zone was an instance of in a live game with expansions.
+  const kind = (...classes: string[]) => neutralZoneKind((className) => classes.includes(className));
+  assert.equal(kind("SupplyZone"), "supply");
+  assert.equal(kind("SupplyZone", "SupplyCardZone"), "supply");
+  assert.equal(kind("SupplyZone", "SingleLandscapeZone"), "landscape");
+  assert.equal(kind("SupplyZone", "NonSupplyZone"), "non-supply");
+  assert.equal(kind("TrashZone"), "trash");
+});
+
+test("an opponent's finished turns are summarized from the log", () => {
+  const lines = [
+    "Bot plays a Silver. (+$2)",
+    "Turn 6 - me",
+    "me plays a Witch.",
+    "Bot gains a Curse.",
+    "Turn 6 - Bot",
+    "Bot plays a Market.",
+    "Bot draws a card.",
+    "me reveals a Moat. (+$1)",
+    "Bot plays 3 Coppers and a Gold. (+$6)",
+    "Bot buys and gains a Gold.",
+    "Bot buys Sea Trade.",
+    "Bot gains 2 Silvers.",
+    "Bot draws 5 cards.",
+    "Turn 7 - me",
+    "me plays 5 Coppers. (+$5)",
+    "Turn 7 - Bot",
+    "Bot plays 2 Coppers. (+$2)"
+  ];
+  assert.deepEqual(completedTurns(lines, ["Bot"]), [{ turn: 6, player: "Bot", coins: 6, bought: ["Gold", "Sea Trade"], gained: ["2 Silvers"] }]);
+  assert.match(renderAgentViewText(view(fixtures.find((item) => item.source.endsWith("#8"))!)), /^OPPONENT TURNS\n {2}turn 3 Lord Rattington: made \$5, bought Silver$/m);
 });
 
 function errorOf(result: { ok: boolean; error?: string }): string {

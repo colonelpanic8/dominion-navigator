@@ -1,5 +1,6 @@
 import type { CardCounter } from "../knowledge";
-import { AgentView, Cost, Decision, HandTreasure, PlayerView, ZoneView } from "./types";
+import { completedTurns, TurnSummary } from "./turn-summary";
+import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
   const entries = Object.entries(counter);
@@ -16,6 +17,12 @@ function cost(value: Cost | undefined): string {
   return [`$${value.coins}`, value.potions ? `${value.potions}P` : "", value.debt ? `${value.debt}D` : ""].filter(Boolean).join("+");
 }
 
+function owns(view: PlayerView): string {
+  const count = Object.values(view.owned.known).reduce((total, item) => total + item, view.owned.unknown);
+  const owned = [cards(view.owned.known), view.owned.unknown ? `${view.owned.unknown} unknown` : ""].filter(Boolean).join("; ");
+  return `owns ${count} card${count === 1 ? "" : "s"}${owned ? `: ${owned}` : ""}`;
+}
+
 function player(label: string, view: PlayerView): string[] {
   const lines = [`${label}: ${view.name}${view.points !== undefined ? ` (${view.points} VP)` : ""}`];
   lines.push(`  hand ${zone(view.hand)}`);
@@ -28,8 +35,7 @@ function player(label: string, view: PlayerView): string[] {
     lines.push(`  ${group.zones.join("+")} hold ${group.count} of: ${cards(group.candidates)}${outside}`);
   }
   if (Object.keys(view.unlocated).length) lines.push(`  unlocated ${cards(view.unlocated)}`);
-  const owned = cards(view.owned.known);
-  lines.push(`  owns ${owned || "nothing known"}${view.owned.unknown ? `; ${view.owned.unknown} unknown` : ""}`);
+  lines.push(`  ${owns(view)}`);
   const counters = Object.entries(view.counters)
     .filter(([, value]) => value !== 0)
     .map(([name, value]) => `${name} ${value}`);
@@ -43,8 +49,10 @@ function pileCosts(view: AgentView): Map<string, Cost> {
   );
 }
 
+const AUTOPLAY = "Autoplay Treasures";
+
 /** Buying and gaining are decided by price, so those options carry the pile's current cost. */
-function decision(value: Decision, costs: Map<string, Cost>): string[] {
+function decision(value: Decision, costs: Map<string, Cost>, buys: number | undefined): string[] {
   const priced = (group: number): boolean => /buy|gain/.test(value.groups[group]?.kind ?? "");
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
@@ -60,6 +68,10 @@ function decision(value: Decision, costs: Map<string, Cost>): string[] {
       const price = option.card && priced(option.group) ? costs.get(option.card) : undefined;
       lines.push(`    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${option.kind === "decline" ? " (decline)" : ""}`);
     }
+  }
+  const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
+  if (autoplay && buys !== undefined && buys > 1 && value.groups.some((group) => group.kind === "buy")) {
+    lines.push(`  NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, choose ${autoplay.index} (${AUTOPLAY}) first.`);
   }
   return lines;
 }
@@ -80,6 +92,15 @@ function score(view: AgentView): string {
   const empty = view.supply.filter((pile) => pile.count === 0).map((pile) => pile.card);
   const piles = [...enders, empty.length ? `empty piles: ${empty.join(", ")}` : ""].filter(Boolean).join(", ");
   return `SCORE ${points}${piles ? `; ${piles}` : ""}`;
+}
+
+function turnLine(turn: TurnSummary): string {
+  const gained = turn.gained.length ? `, gained ${turn.gained.join(", ")}` : "";
+  return `  turn ${turn.turn} ${turn.player}: made $${turn.coins}, bought ${turn.bought.join(", ") || "nothing"}${gained}`;
+}
+
+function resultLine(value: GameResult): string {
+  return `RESULT ${value.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`;
 }
 
 /**
@@ -103,9 +124,7 @@ function blocks(view: AgentView): Block[] {
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];
   if (view.game.running) game.push(score(view));
-  if (view.game.result) {
-    game.push(`RESULT ${view.game.result.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`);
-  }
+  if (view.game.result) game.push(resultLine(view.game.result));
 
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
@@ -125,12 +144,24 @@ function blocks(view: AgentView): Block[] {
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
-  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view)), always: true });
+  const turns = completedTurns(view.sinceLastDecision, view.opponents.map((opponent) => opponent.name));
+  if (turns.length) result.push({ kind: "lines", key: "turns", lines: ["OPPONENT TURNS", ...turns.map(turnLine)], always: true });
+  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view), turn.buys), always: true });
   return result;
 }
 
 function renderBlock(block: Block): string[] {
   return block.kind === "lines" ? block.lines : [`${block.label} ${block.piles.map((pile) => pile.text).join(", ")}`];
+}
+
+/** A finished game in brief: the result and what each player ended with. */
+export function renderGameOverText(view: AgentView, result: GameResult): string {
+  const players = [...(view.you ? [["YOU", view.you] as const] : []), ...view.opponents.map((item) => ["OPPONENT", item] as const)];
+  return [
+    `GAME ${view.game.number ?? "?"} (over)`,
+    resultLine(result),
+    ...players.map(([label, item]) => `${label}: ${item.name}${item.points !== undefined ? ` (${item.points} VP)` : ""} ${owns(item)}`)
+  ].join("\n");
 }
 
 /** A compact plain-text rendering of an agent view, derived only from the JSON. */

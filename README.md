@@ -142,7 +142,7 @@ node --import tsx scripts/mcp-server.ts
 
 | Tool | What it does |
 | --- | --- |
-| `state` | The client's screen and, in a game, the whole table plus the text of every card in it. |
+| `state` | The client's screen and, in a game, the whole table plus the text of every card in it. A finished game shows only its result and each player's cards. |
 | `step` | Answers the open decision with option numbers, waits for the next decision, and returns what changed. |
 | `wait` | Waits for the next decision without answering. |
 | `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
@@ -151,7 +151,7 @@ node --import tsx scripts/mcp-server.ts
 | `cards` | Card text, types and current cost by name. |
 | `inspect` | Raw client or tracker state at a path, for debugging. |
 
-`step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` always prints everything. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
+`step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
 
@@ -205,6 +205,6 @@ That file contains the extracted Dominion client card-shaped objects plus a `tra
 
 Related scripts (the extract and kingdom scripts drive a Chrome started by `npm run launch:chrome`):
 
-- `node scripts/extract-card-texts-from-cdp.mjs`: logs in (credentials from the `pass` entry in `DOMINION_PASS_ENTRY`, default `dominion.games/EyeVanMaliceSon`) and re-extracts the card-shaped objects.
+- `node scripts/extract-card-texts-from-cdp.mjs`: logs in (credentials from the `pass` entry in `DOMINION_PASS_ENTRY`, default `dominion.games/colonelpanic8`) and re-extracts the card-shaped objects.
 - `node scripts/audit-card-tracker-candidates.mjs`: regenerates `trackerAudit` in place (no browser needed).
 - `node scripts/set-table-kingdom.mjs [--no-bot] <card>...`: fills the open table editor with a fixed kingdom and, by default, adds a bot.

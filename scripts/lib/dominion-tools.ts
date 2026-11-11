@@ -1,5 +1,5 @@
 import { buildCardGlossary, CardDataEntry, renderGlossary, supplyCosts, viewCardNames } from "../../src/agent/glossary";
-import { renderAgentViewDelta, renderAgentViewText } from "../../src/agent/render-text";
+import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../../src/agent/render-text";
 import type { AgentView, Decision, SessionState } from "../../src/agent/types";
 import type { DominionClient, WaitResult } from "./dominion-client";
 import type { Tool } from "./mcp-stdio";
@@ -14,9 +14,10 @@ export const INSTRUCTIONS = [
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0.",
-  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays the treasures it needs first.",
+  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
-  "Counts marked unknown are cards this player cannot know. Views never contain hidden information.",
+  "OPPONENT TURNS sums each opponent turn that ended within the LOG: the $ its log lines show it making, and what it bought and gained.",
+  "Views never contain hidden information. A zone's `N unknown` counts cards you cannot identify, usually because they moved while face down, such as an opponent's hand being discarded; it is not an error. A line like `hand+discard hold 3 of: Copper, 2 Silver` means those cards are split between those zones in a way you cannot see; with `, 1 of them elsewhere`, one of the listed cards is in some other zone.",
   "`inspect` reads raw client state for debugging and can show more than a player may know, so do not use it to choose plays."
 ].join(" ");
 
@@ -73,6 +74,7 @@ function forcedAnswer(decision: Decision): number[] | undefined {
   return group.min === 1 && group.max === 1 ? [option.index] : undefined;
 }
 
+const GAME_OVER = "The game is over. Call new_game to play again.";
 const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
 
 export function createDominionTools(client: Pick<DominionClient, "call">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
@@ -133,7 +135,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     }
     lines.push(...(await present(wait.view, mode, signal)));
     if (wait.status === "timeout") lines.push("No decision for you yet. Call wait to keep waiting.");
-    if (wait.status === "game-over") lines.push("The game is over. Call new_game to play again.");
+    if (wait.status === "game-over") lines.push(GAME_OVER);
     if (wait.status === "spectating") lines.push("This account is spectating this game, so there is nothing to answer.");
     if (wait.status === "decision" && !autoAnswer) lines.push(HUMAN_OPPONENTS);
     if (wait.knowledgeLag > 0 && wait.status === "decision") {
@@ -149,7 +151,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     {
       name: "state",
       description:
-        "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game.",
+        "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game. A finished game shows only its result and each player's cards.",
       inputSchema: { type: "object", properties: {} },
       async run(_args, signal) {
         const session = await client.call("getSession", []);
@@ -158,6 +160,9 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
           view = await client.call("getAgentView", []);
         } catch {
           return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
+        }
+        if (!view.game.running && view.game.result) {
+          return [describeSession(session), renderGameOverText(view, view.game.result), GAME_OVER].join("\n");
         }
         return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
       }
