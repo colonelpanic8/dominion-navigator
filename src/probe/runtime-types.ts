@@ -53,6 +53,8 @@ export type RuntimePlayer = {
   name?: string;
   isHero?: boolean;
   isMe?: boolean;
+  boughtProjects?: unknown[];
+  activeReminders?: Array<{ cardName?: RuntimeCardName }>;
 };
 
 /** Bots have player ids at or above this value. */
@@ -63,6 +65,7 @@ export type RuntimeZone = {
   zoneName?: string;
   pileName?: RuntimeCardName;
   owner?: RuntimePlayer;
+  attachedTrait?: RuntimeCardName;
   cardStacks?: Array<RuntimeCardStack | null | undefined>;
   primaryStacks?: Array<RuntimeCardStack | null | undefined>;
 };
@@ -71,17 +74,30 @@ export type RuntimeTurn = {
   ownerId?: number;
   turnNumber?: number;
   controllerId?: number;
+  /** 0 for a normal turn; other values are extra turns. */
+  turnType?: number;
 };
 
 export type RuntimeCounter = {
   counterName?: { name?: string };
   owner?: RuntimePlayer;
   value?: number;
+  /** The pile a counter sits on, or the ownerless "nowhere" zone for a player's own counters. */
+  associatedPile?: RuntimeZone;
+  associatedCard?: RuntimeCard | null;
+};
+
+export type RuntimeToken = {
+  tokenName?: { name?: string };
+  owner?: RuntimePlayer;
+  zone?: RuntimeZone;
+  isFlipped?: boolean;
 };
 
 export type RuntimeState = {
   zones?: Array<RuntimeZone | undefined>;
   counters?: RuntimeCounter[];
+  tokens?: RuntimeToken[];
   cards?: Array<RuntimeCard | undefined>;
   cardNames?: RuntimeCardName[];
   players?: RuntimePlayer[];
@@ -170,6 +186,7 @@ export type RuntimeAutomatch = {
 
 export type RuntimeServerMessenger = {
   resign?: () => void;
+  newTableRequest?: (rules: unknown[]) => void;
 };
 
 export type RuntimeServices = {
@@ -222,6 +239,8 @@ export type DominionGlobals = {
   QuestionTypes?: Record<string, RuntimeEnumValue>;
   QuestionIds?: Record<string, RuntimeEnumValue>;
   TableRuleIds?: Record<string, RuntimeEnumValue>;
+  TableRule?: new (id: RuntimeEnumValue, value: unknown, args?: unknown) => unknown;
+  Expansions?: Record<string, unknown>;
   DeclineButtonIds?: Record<string, RuntimeEnumValue>;
   getByOrdinal?: (enumObject: Record<string, RuntimeEnumValue>, ordinal: number) => RuntimeEnumValue | undefined;
   getOrdinal?: (enumObject: Partial<Record<string, RuntimeCardName>>, value: RuntimeCardName) => number;

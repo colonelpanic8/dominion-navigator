@@ -14,6 +14,7 @@ export const INSTRUCTIONS = [
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0.",
+  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays the treasures it needs first.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
   "Counts marked unknown are cards this player cannot know. Views never contain hidden information.",
   "`inspect` reads raw client state for debugging and can show more than a player may know, so do not use it to choose plays."
@@ -89,11 +90,12 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     return [body, ...cardLines(view)];
   };
 
-  const requireBotOpponents = async (): Promise<void> => {
-    if (options.allowHumanOpponents) return;
+  /** Fails unless a game is on screen and, for acting in it, the opponents are ones this server may play. */
+  const requireGame = async (purpose: "watch" | "act"): Promise<void> => {
     const session = await client.call("getSession", []);
+    if (session.screen === "login") throw new Error("Nobody is logged in to dominion.games in that Chrome. Log in there first.");
     if (session.screen !== "game") throw new Error(`No game is running; the client is on the ${session.screen} screen. Call new_game.`);
-    if (!session.game?.opponentsAreBots) {
+    if (purpose === "act" && !options.allowHumanOpponents && !session.game?.opponentsAreBots) {
       throw new Error("This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.");
     }
   };
@@ -158,7 +160,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         const decision = text(args, "decision");
         const choose = list(args, "choose", "number");
         const timeoutMs = waitMs(args);
-        await requireBotOpponents();
+        await requireGame("act");
         const result = await client.call("answer", [decision, choose]);
         if (!result.ok) {
           const current = present(await client.call("getAgentView", []), "delta");
@@ -172,7 +174,9 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       description: "Waits for your next decision without answering anything, then returns what changed. Use it after a timeout or while an opponent is playing.",
       inputSchema: { type: "object", properties: { timeout_s: timeoutProperty } },
       async run(args) {
-        return settle(waitMs(args), "delta");
+        const timeoutMs = waitMs(args);
+        await requireGame("watch");
+        return settle(timeoutMs, "delta");
       }
     },
     {

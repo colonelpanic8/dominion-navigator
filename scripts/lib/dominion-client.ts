@@ -52,6 +52,10 @@ export class DominionClient {
         return navigator.${method}(${args});
       })()`;
       return (await evaluate(client, expression)) as ReturnType<NavigatorApi[Method]>;
+    } catch (error) {
+      // A page exception arrives as "Error: message" followed by the page's stack.
+      const [summary = ""] = (error instanceof Error ? error.message : String(error)).split("\n");
+      throw new Error(summary.replace(/^(\w*Error: )+/, ""));
     } finally {
       client.close();
     }

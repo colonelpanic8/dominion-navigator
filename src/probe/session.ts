@@ -120,6 +120,18 @@ async function setKingdom(tableService: RuntimeTableService, cards: RuntimeCardN
   }
 }
 
+/** Asks for a two-seat table with the rules the lobby's "New Table" tab sends. */
+function requestTable(): void {
+  const { TableRule, TableRuleIds, Expansions } = dominion;
+  const messenger = getService("serverMessenger");
+  const { MIN_PLAYERS, MAX_PLAYERS, USED_EXPANSIONS } = TableRuleIds ?? {};
+  if (!messenger?.newTableRequest || !TableRule || !MIN_PLAYERS || !MAX_PLAYERS || !USED_EXPANSIONS || !Expansions) {
+    throw new ActionError("the client's table rules are not available");
+  }
+  const expansions = Object.values(Expansions).filter((expansion) => expansion !== Expansions.DEPRECATED);
+  messenger.newTableRequest([new TableRule(MIN_PLAYERS, 2), new TableRule(MAX_PLAYERS, 2), new TableRule(USED_EXPANSIONS, -1, expansions)]);
+}
+
 async function seatBots(tableService: RuntimeTableService, bots: number): Promise<void> {
   for (let seated = readSession().table?.bots.length ?? 0; seated < bots; seated += 1) {
     tableService.addBot?.();
@@ -158,9 +170,7 @@ async function startGame(options: NewGameOptions): Promise<SessionState> {
           if (!(await waitUntil(inFreshGame, START_TIMEOUT_MS))) throw new ActionError("no bot game started");
           return readSession();
         }
-        const starter = getComponentController<{ start?: () => void }>("table-starter", "$tableStarterController");
-        if (!starter?.start) throw new ActionError("the lobby's table starter is not available");
-        starter.start();
+        requestTable();
         if (!(await waitUntil(() => readSession().screen === "table", SCREEN_CHANGE_TIMEOUT_MS))) throw new ActionError("no table was created");
         break;
       }
