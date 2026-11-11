@@ -5,7 +5,7 @@ import { CardMoveSummary, ZoneSummary } from "../src/messages";
 
 const player = { index: 0, name: "Player", isHero: true };
 
-function summaryZone(index: number, zoneName: string, topCards: string[] = [], owner = player): ZoneSummary {
+function summaryZone(index: number, zoneName: string, topCards: string[] = [], owner: ZoneSummary["owner"] = player): ZoneSummary {
   return {
     index,
     zoneName,

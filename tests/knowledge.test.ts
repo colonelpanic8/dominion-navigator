@@ -1177,7 +1177,6 @@ test("draw snapshot identities are ignored after Courtyard draws named cards", (
   const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
   assert.deepEqual(draw?.knownCards, { Copper: 3, Estate: 1, Seer: 1 });
-  assert.equal(draw?.knownCards.Courtyard, undefined);
   assert.equal(draw?.unknownCount, 0);
   assert.equal(draw?.totalCount, 5);
   assert.equal(knowledge?.unknownLocatedCount, 0);
@@ -1243,7 +1242,6 @@ test("Courtyard draw and put-back loop keeps hero draw exact despite stale snaps
   const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
   assert.deepEqual(draw?.knownCards, { Copper: 2, Seer: 1 });
-  assert.equal(draw?.knownCards.Courtyard, undefined);
   assert.equal(draw?.unknownCount, 0);
   assert.equal(draw?.totalCount, 3);
   assert.deepEqual(knowledge?.unlocatedKnownCards, {});
