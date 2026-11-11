@@ -51,13 +51,16 @@ function trash(zones: RuntimeZone[]): TableState["trash"] {
   return { cards: Object.fromEntries(Object.entries(cards).sort(([a], [b]) => a.localeCompare(b))), unknown };
 }
 
-/** The log opens with the game's id; the page text shows it too, but still names the previous game while a new one loads. */
+/**
+ * The log opens with the game's id. The page text shows it too, but it still
+ * names the previous game while a new one loads, so no number is better than that one.
+ */
 function gameNumber(game: RuntimeGame): string | undefined {
   for (const argument of game.logModel?.entries?.[0]?.logArguments ?? []) {
     const gameId = (argument as { argument?: { gameId?: unknown } } | null)?.argument?.gameId;
     if (typeof gameId === "number") return String(gameId);
   }
-  return document.body?.innerText.match(/Game #(\d+)/)?.[1];
+  return undefined;
 }
 
 export function summarizeTable(game: RuntimeGame): TableState {

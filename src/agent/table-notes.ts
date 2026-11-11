@@ -25,7 +25,7 @@ export function tableNotes(state: RuntimeState | undefined, turnKinds: string[])
   const turn = state?.activeTurn;
   const turnKind = turnKinds[turn?.turnType ?? 0];
   if (turn?.turnType) notes.push(`This is an extra turn (${turnKind ? turnKind.toLowerCase().replace(/_/g, " ") : `type ${turn.turnType}`}).`);
-  if (turn?.controllerId !== undefined && turn.controllerId !== turn.ownerId) {
+  if (turn?.controllerId !== undefined && turn.ownerId !== undefined && turn.controllerId !== turn.ownerId) {
     const controller = (state?.players ?? []).find((player) => player.index === turn.controllerId);
     notes.push(`${seated(controller) ?? `Player ${turn.controllerId}`} controls this turn.`);
   }

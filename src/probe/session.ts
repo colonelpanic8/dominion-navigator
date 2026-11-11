@@ -177,13 +177,15 @@ async function startGame(options: NewGameOptions): Promise<SessionState> {
       case "table": {
         const tableService = getService("tableService");
         const table = session.table;
-        const seatsFit = table?.bots.length === bots || (kingdom.length > 0 && table?.bots.length === 0);
+        // An open seat lets a person sit down before the game starts.
+        const seatsFit = (table?.bots.length === bots && table.openSeats === 0) || (kingdom.length > 0 && table?.bots.length === 0);
         if (!tableService || !table?.host || table.players.length !== 1 || !seatsFit) {
           tableService?.leave?.();
           await waitUntil(() => readSession().screen === "lobby", SCREEN_CHANGE_TIMEOUT_MS);
           break;
         }
         await seatBots(tableService, bots);
+        if ((readSession().table?.openSeats ?? 0) > 0) throw new ActionError("the table still has open seats after seating the bots");
         await setKingdom(tableService, kingdom);
         tableService.ready?.();
         if (!(await waitUntil(inFreshGame, START_TIMEOUT_MS))) {

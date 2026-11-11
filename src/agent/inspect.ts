@@ -12,6 +12,8 @@ export type InspectOptions = {
 const MAX_DEPTH = 6;
 const MAX_ENTRIES = 200;
 const MAX_STRING = 200;
+/** Values one dump may expand. The client's graph shares objects widely, so depth alone does not bound the work. */
+const MAX_VALUES = 4000;
 
 function className(value: object): string | undefined {
   const name = (Object.getPrototypeOf(value) as { constructor?: { name?: string } } | null)?.constructor?.name;
@@ -20,11 +22,20 @@ function className(value: object): string | undefined {
 }
 
 function isDomNode(value: object): value is { nodeType: number; nodeName: string } {
-  return typeof (value as { nodeType?: unknown }).nodeType === "number" && typeof (value as { nodeName?: unknown }).nodeName === "string";
+  return typeof read(value, "nodeType") === "number" && typeof read(value, "nodeName") === "string";
+}
+
+/** A property read that survives getters that throw. */
+function read(value: object, key: string): unknown {
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return "[unreadable]";
+  }
 }
 
 function dataKeys(value: object): string[] {
-  return Object.keys(value).filter((key) => typeof (value as Record<string, unknown>)[key] !== "function");
+  return Object.keys(value).filter((key) => typeof read(value, key) !== "function");
 }
 
 /** One-line stand-in for a container that is not expanded. */
@@ -33,7 +44,7 @@ function summarize(value: object): string {
   if (value instanceof Map) return `Map(${value.size})`;
   if (value instanceof Set) return `Set(${value.size})`;
   if (isDomNode(value)) return `<${value.nodeName.toLowerCase()}>`;
-  const name = (value as { name?: unknown }).name;
+  const name = read(value, "name");
   const label = className(value) ?? "";
   if (typeof name === "string") return `${label}(${name})`;
   const keys = dataKeys(value);
@@ -50,8 +61,10 @@ export function inspectValue(value: unknown, options: InspectOptions = {}): unkn
   const maxDepth = Math.min(Math.max(options.depth ?? 2, 0), MAX_DEPTH);
   const maxEntries = Math.min(Math.max(options.maxEntries ?? 40, 1), MAX_ENTRIES);
   const ancestors: object[] = [];
+  let remaining = MAX_VALUES;
 
   const walk = (current: unknown, depth: number): unknown => {
+    remaining -= 1;
     if (current === null || current === undefined) return current ?? null;
     if (typeof current === "string") return current.length > MAX_STRING ? `${current.slice(0, MAX_STRING)}…` : current;
     if (typeof current === "number") return Number.isFinite(current) ? current : String(current);
@@ -59,7 +72,7 @@ export function inspectValue(value: unknown, options: InspectOptions = {}): unkn
     if (typeof current === "function") return "function";
     if (typeof current !== "object") return String(current);
     if (ancestors.includes(current)) return "[circular]";
-    if (depth > maxDepth || isDomNode(current)) return summarize(current);
+    if (depth > maxDepth || remaining < 0 || isDomNode(current)) return summarize(current);
 
     ancestors.push(current);
     try {
@@ -72,9 +85,12 @@ export function inspectValue(value: unknown, options: InspectOptions = {}): unkn
       const result: Record<string, unknown> = {};
       const label = className(current);
       if (label) result.$class = label;
-      for (const key of keys.slice(0, maxEntries)) result[key] = walk((current as Record<string, unknown>)[key], depth + 1);
+      for (const key of keys.slice(0, maxEntries)) result[key] = walk(read(current, key), depth + 1);
       if (keys.length > maxEntries) result["…"] = `${keys.length - maxEntries} more keys`;
       return result;
+    } catch {
+      // Cross-origin windows refuse even to list their keys.
+      return "[unreadable]";
     } finally {
       ancestors.pop();
     }
@@ -92,7 +108,7 @@ function step(container: unknown, segment: string): unknown {
   }
   if (container instanceof Set) return [...container][Number(segment)];
   if (container === null || (typeof container !== "object" && typeof container !== "function")) return undefined;
-  return (container as Record<string, unknown>)[segment];
+  return read(container, segment);
 }
 
 export type InspectResult = { ok: true; path: string; value: unknown } | { ok: false; error: string };

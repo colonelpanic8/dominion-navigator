@@ -171,7 +171,8 @@ export class AgentBridge {
     const game = getGame();
     if (!game?.state) return { entries: [], lastIndex: -1 };
     const entries = logEntries(game, options.afterIndex ?? -1);
-    return { entries: options.limit !== undefined ? entries.slice(-Math.max(0, options.limit)) : entries, lastIndex: latestLogIndex(game) };
+    const kept = options.limit === undefined ? entries : entries.slice(Math.max(0, entries.length - Math.max(0, options.limit)));
+    return { entries: kept, lastIndex: latestLogIndex(game) };
   }
 
   get knowledgeSummary(): KnowledgeSummary | undefined {

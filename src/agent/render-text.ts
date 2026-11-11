@@ -60,7 +60,7 @@ function decision(value: Decision): string[] {
  * changes; a piles block can report single piles because each stands alone.
  */
 type Block =
-  | { kind: "lines"; key: string; lines: string[]; always?: boolean }
+  | { kind: "lines"; key: string; lines: string[]; always?: boolean; /** Printed by a delta once the block is gone. */ gone?: string }
   | { kind: "piles"; key: string; label: string; piles: Array<{ card: string; text: string }> };
 
 function blocks(view: AgentView): Block[] {
@@ -90,7 +90,9 @@ function blocks(view: AgentView): Block[] {
   }
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });
-  if (view.notes?.length) result.push({ kind: "lines", key: "notes", lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)] });
+  if (view.notes?.length) {
+    result.push({ kind: "lines", key: "notes", lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)], gone: "ALSO nothing any more" });
+  }
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
@@ -113,12 +115,14 @@ export function renderAgentViewText(view: AgentView): string {
  * piles that differ. Views of different games render in full.
  */
 export function renderAgentViewDelta(previous: AgentView, next: AgentView): string {
-  if (previous.game.number !== next.game.number) return renderAgentViewText(next);
+  if (previous.game.number === undefined || previous.game.number !== next.game.number) return renderAgentViewText(next);
   const before = new Map(blocks(previous).map((block) => [block.key, block]));
   const after = blocks(next);
-  const emptied: Block[] = [...before.values()]
-    .filter((block) => block.kind === "piles" && !after.some((item) => item.key === block.key))
-    .map((block) => ({ ...block, piles: [] }));
+  const removed = [...before.values()].filter((block) => !after.some((item) => item.key === block.key));
+  const emptied: Block[] = removed.flatMap((block): Block[] => {
+    if (block.kind === "piles") return [{ ...block, piles: [] }];
+    return block.gone ? [{ kind: "lines", key: block.key, lines: [block.gone] }] : [];
+  });
   const lines: string[] = [];
   for (const block of [...after, ...emptied]) {
     const old = before.get(block.key);
