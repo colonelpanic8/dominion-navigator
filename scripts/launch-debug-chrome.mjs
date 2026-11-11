@@ -10,6 +10,7 @@ const chrome = process.env.CHROME ?? "google-chrome-stable";
 const profile = process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? "/tmp/dominion-navigator-chrome-profile4";
 const port = debugPort();
 const url = process.env.DOMINION_NAVIGATOR_URL ?? "https://dominion.games/";
+const BLANK_PAGE_URLS = new Set(["about:blank", "chrome://newtab/", "chrome://new-tab-page/"]);
 
 await mkdir(profile, { recursive: true });
 const logFile = await open(resolve(profile, "chrome-with-extension.log"), "a");
@@ -27,8 +28,7 @@ const child = spawn(
     "--enable-wayland-ime=true",
     "--disable-gpu",
     "--no-first-run",
-    "--no-default-browser-check",
-    url
+    "--no-default-browser-check"
   ],
   {
     stdio: ["ignore", "ignore", logFile.fd, "pipe", "pipe"]
@@ -71,6 +71,13 @@ const loadResult = await send("Extensions.loadUnpacked", { path: extensionPath }
 if (loadResult.error) {
   throw new Error(`Extensions.loadUnpacked failed: ${loadResult.error.message}`);
 }
+
+// Open the URL only now: tabs that loaded before the extension never get its content script.
+const blankPages = ((await send("Target.getTargets")).result?.targetInfos ?? []).filter(
+  (target) => target.type === "page" && BLANK_PAGE_URLS.has(target.url)
+);
+await send("Target.createTarget", { url });
+for (const page of blankPages) await send("Target.closeTarget", { targetId: page.targetId });
 
 await waitForDebugPort();
 console.log(`Dominion Navigator loaded as ${loadResult.result.id}`);
