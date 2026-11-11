@@ -5,6 +5,7 @@ import { buildDecision, resolveAnswer } from "../src/agent/decisions";
 import { buildCardGlossary, normalizeCardText } from "../src/agent/glossary";
 import { renderAgentViewText } from "../src/agent/render-text";
 import { RawQuestion, ZoneView } from "../src/agent/types";
+import { neutralZoneKind } from "../src/probe/zone-kind";
 import type { CardCounter, KnowledgeSummary } from "../src/knowledge";
 import { fixture, fixtures, optionIndex, view } from "./live-fixtures";
 
@@ -144,6 +145,16 @@ test("card text markup is normalized for the glossary", () => {
     }),
     { Witch: { name: "Witch", types: ["Action", "Attack"], expansion: "Base", cost: { coins: 5 }, text: "+2 Cards\nEach other player gains a Curse." } }
   );
+});
+
+test("landscapes and non-supply piles stay out of the supply", () => {
+  // The classes each zone was an instance of in a live game with expansions.
+  const kind = (...classes: string[]) => neutralZoneKind((className) => classes.includes(className));
+  assert.equal(kind("SupplyZone"), "supply");
+  assert.equal(kind("SupplyZone", "SupplyCardZone"), "supply");
+  assert.equal(kind("SupplyZone", "SingleLandscapeZone"), "landscape");
+  assert.equal(kind("SupplyZone", "NonSupplyZone"), "non-supply");
+  assert.equal(kind("TrashZone"), "trash");
 });
 
 function errorOf(result: { ok: boolean; error?: string }): string {

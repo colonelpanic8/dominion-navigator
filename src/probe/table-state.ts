@@ -2,6 +2,7 @@ import type { CardCounter } from "../knowledge";
 import { Cost, HandTreasure, PileView, SupplyPileView, TableState } from "../agent/types";
 import { tableNotes } from "../agent/table-notes";
 import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
+import { NeutralZoneKind, neutralZoneKind } from "./zone-kind";
 
 function cost(card: RuntimeCard | undefined): Cost | undefined {
   const value = card?.cost;
@@ -89,22 +90,19 @@ function handTreasure(game: RuntimeGame, zones: RuntimeZone[]): HandTreasure | u
 export function summarizeTable(game: RuntimeGame): TableState {
   const zones = (game.state?.zones ?? []).filter((zone): zone is RuntimeZone => Boolean(zone));
   const neutral = zones.filter((zone) => (zone.owner?.index ?? -1) < 0);
-  const isLandscape = (zone: RuntimeZone): boolean =>
-    isRuntimeInstance(zone, "SingleLandscapeZone") || isRuntimeInstance(zone, "ReducedLandscapeZone");
+  const ofKind = (kind: NeutralZoneKind): RuntimeZone[] =>
+    neutral.filter((zone) => neutralZoneKind((className) => isRuntimeInstance(zone, className)) === kind);
 
-  const supply: SupplyPileView[] = neutral
-    .filter((zone) => isRuntimeInstance(zone, "SupplyZone"))
+  const supply: SupplyPileView[] = ofKind("supply")
     .map((zone) => {
       const view = pile(zone);
       return view ? { ...view, kingdom: isRuntimeInstance(zone, "SupplyCardZone") } : undefined;
     })
     .filter((view): view is SupplyPileView => Boolean(view));
-  const landscapes = neutral
-    .filter(isLandscape)
+  const landscapes = ofKind("landscape")
     .map(pile)
     .filter((view): view is PileView => Boolean(view));
-  const nonSupply = neutral
-    .filter((zone) => isRuntimeInstance(zone, "NonSupplyZone") && !isLandscape(zone) && !isRuntimeInstance(zone, "SupplyZone"))
+  const nonSupply = ofKind("non-supply")
     .map(pile)
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
@@ -133,7 +131,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     supply,
     nonSupply,
     landscapes,
-    trash: trash(neutral.filter((zone) => isRuntimeInstance(zone, "TrashZone"))),
+    trash: trash(ofKind("trash")),
     ...(notes.length ? { notes } : {})
   };
 }
