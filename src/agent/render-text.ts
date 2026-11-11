@@ -186,7 +186,7 @@ function blocks(view: AgentView): Block[] {
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });
   if (view.notes?.length) {
-    result.push({ kind: "lines", key: "notes", lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)], gone: "ALSO nothing any more" });
+    result.push({ kind: "lines", key: "notes", lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)], gone: "ALSO (none of the earlier notes apply any more)" });
   }
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });

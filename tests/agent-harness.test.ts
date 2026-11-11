@@ -182,7 +182,7 @@ test("table notes report expansion state the view has no field for, and nothing 
     "Embargo Tokens 1 on Village.",
     "VP Tokens 3 on Temple.",
     "Ann has bought Cathedral.",
-    "Ann has reminders up for Bridge.",
+    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player).",
     "Cheap is attached to Village."
   ]);
 });
@@ -214,7 +214,7 @@ test("a view is only a delta base once it was delivered, and log lines are shown
 test("a delta says when the notes no longer apply", () => {
   const noted: AgentView = { ...firstBuy, notes: ["This is an extra turn (outpost)."] };
   assert.match(renderAgentViewDelta(firstBuy, noted), /^ALSO\n {2}This is an extra turn \(outpost\)\.$/m);
-  assert.match(renderAgentViewDelta(noted, firstBuy), /^ALSO nothing any more$/m);
+  assert.match(renderAgentViewDelta(noted, firstBuy), /^ALSO \(none of the earlier notes apply any more\)$/m);
 });
 
 test("inspect stops expanding a widely shared graph", () => {
