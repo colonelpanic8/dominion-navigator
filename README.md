@@ -38,7 +38,7 @@ The knowledge model separates Dominion's internal zone state from what the playe
   - `src/probe/questions.ts`: reads the client's open questions and answers them.
   - `src/probe/table-state.ts`: public table state (supply, landscapes, trash, counters, turn).
   - `src/probe/agent-bridge.ts`: the agent API on `window.__dominionNavigator`.
-- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text rendering, decision building and answer validation (`decisions.ts`), and the card glossary.
+- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text rendering, decision building and answer validation (`decisions.ts`), the card glossary, and policies.
 - `src/content-script.ts`: extension entry point that wires the pieces below together.
   - `src/content/overlay.ts`: the shadow-DOM overlay.
   - `src/content/knowledge-window.ts`: builds the card-details modal payload.
@@ -89,11 +89,32 @@ To use your normal Chrome profile instead, open `chrome://extensions`, enable De
 npm run dev:build
 ```
 
-Before pushing, run the same checks as CI (icons, type-check of `src/` and `tests/`, tests, build, and the release zip in `releases/`):
+Before pushing, run the same checks as CI (icons, type-check of `src/`, `tests/` and `scripts/`, tests, build, and the release zip in `releases/`):
 
 ```sh
 npm run check
 ```
+
+## Agent API
+
+The probe exposes a machine-readable view of the game and a way to answer the game's questions, for harnesses that drive a game over CDP:
+
+```js
+window.__dominionNavigator.getAgentView()      // dominion-navigator/agent-view@1 JSON
+window.__dominionNavigator.getAgentViewText()  // compact text rendering of the same view
+await window.__dominionNavigator.waitForDecision({ timeoutMs: 60000 })
+window.__dominionNavigator.answer(decisionId, [optionIndex, ...])
+```
+
+The view combines public table state (supply, landscapes, trash, counters) with per-player card knowledge taken only from the knowledge model, so it never contains hidden information the player could not know. `decision` lists the open question's option groups and options. `answer` only accepts option indices for a decision that is still open, enforces each group's min/max, and refuses to act when the account is spectating. The turn phase is derived from the open decision, since the client does not track it.
+
+`scripts/agent-play.ts` plays the current game through this API with a pluggable policy (`src/agent/policy.ts`). The included `big-money` policy plays treasures and buys Province at $8, Gold at $6-7 and Silver at $3-5, with an optional terminal Action:
+
+```sh
+npm run agent:play -- --policy big-money --terminal Remodel --record decisions.jsonl
+```
+
+`--record` writes one JSON line per decision (view, text rendering, choice, result) plus a per-game card glossary built from `data/dominion-card-shaped-objects.json`.
 
 ## Debugging
 
