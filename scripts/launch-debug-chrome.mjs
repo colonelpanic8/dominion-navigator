@@ -5,10 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const extensionPath = resolve(root, "dist");
-const defaultChrome =
-  "/nix/store/dqvrb8ybqygsd0cgk5jchvzq4hvm6szx-google-chrome-147.0.7727.137/share/google/chrome/chrome";
-
-const chrome = process.env.CHROME ?? defaultChrome;
+const chrome = process.env.CHROME ?? "google-chrome-stable";
 const profile = process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? "/tmp/dominion-navigator-chrome-profile4";
 const port = Number(process.env.DOMINION_NAVIGATOR_DEBUG_PORT ?? "9226");
 const url = process.env.DOMINION_NAVIGATOR_URL ?? "https://dominion.games/";
