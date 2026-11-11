@@ -54,6 +54,8 @@ function pileCosts(view: AgentView): Map<string, Cost> {
 }
 
 const AUTOPLAY = "Autoplay Treasures";
+/** Treasures that only make money, so it does not matter whether they are played. */
+const PLAIN_TREASURES = new Set(["Copper", "Silver", "Gold", "Platinum", "Potion"]);
 
 function pileTypes(view: AgentView): Map<string, string[]> {
   return new Map([...view.supply, ...view.nonSupply, ...view.landscapes].map((pile) => [pile.card, pile.types] as const));
@@ -68,6 +70,21 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
   const playFirst = autoplay ? `choose ${autoplay.index} (${AUTOPLAY}) first` : "play your treasures first";
   const buys = view.turn.buys;
+  const playGroup = value.groups.find((group) => group.kind === "play");
+  const playable = value.options.filter((option) => option.group === playGroup?.group && option.card);
+  const playOptions = (cards: Set<string>): string => playable.filter((option) => cards.has(option.card!)).map((option) => `${option.index} (${option.label})`).join(", ");
+  const variable = new Set(view.turn.treasureInHand?.variable ?? []);
+  const special = new Set(playable.map((option) => option.card!).filter((card) => !PLAIN_TREASURES.has(card) && !variable.has(card)));
+  if (variable.size && playOptions(variable)) {
+    notes.push(
+      `NOTE the buy list only counts treasures with a fixed value, so it may leave out cards you can afford. ${[...variable].join(", ")} must be played first, one at a time, before buying: ${playOptions(variable)}.`
+    );
+  }
+  if (special.size) {
+    notes.push(
+      `NOTE buying a card plays only the treasures that card needs and leaves the rest in hand, so ${[...special].join(", ")} may never be played. To play ${special.size > 1 ? "them" : "it"}, choose ${playOptions(special)} before buying.`
+    );
+  }
   if (autoplay && buys !== undefined && buys > 1) {
     notes.push(`NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, ${playFirst}.`);
   }
@@ -126,7 +143,7 @@ function available(turn: TurnView, hand: HandTreasure): string {
   const unplayed = hand.coins || hand.potions ? ` + ${money(hand.coins, hand.potions)} in unplayed treasures` : "";
   const counted: CardCounter = {};
   for (const name of hand.variable) counted[name] = (counted[name] ?? 0) + 1;
-  const variable = hand.variable.length ? `, plus unplayed ${cards(counted)} (value varies)` : "";
+  const variable = hand.variable.length ? `, plus unplayed ${cards(counted)} (value or effect: see card)` : "";
   return `${money(coins + hand.coins, potions + hand.potions)} available (${money(coins, potions)} played${unplayed})${variable}`;
 }
 

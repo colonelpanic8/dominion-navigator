@@ -228,7 +228,7 @@ test("inspect stops expanding a widely shared graph", () => {
 test("the status totals played and unplayed money and the score is always printed", () => {
   const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, coins: 2, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
   const text = renderAgentViewText(view);
-  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value varies\)$/m);
+  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value or effect: see card\)$/m);
   assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
@@ -271,4 +271,20 @@ test("a buy decision says that ending buys leads to the Night phase when Night c
   const endBuys = secondBuy.decision!.options.find((option) => option.kind === "decline")!;
   assert.match(renderAgentViewText(view), new RegExp(`^ {2}NOTE Night cards .* To play Monastery, choose ${endBuys.index} \\(End Buys\\) when done buying; .*Night phase\\.$`, "m"));
   assert.doesNotMatch(renderAgentViewText(secondBuy), /NOTE Night/);
+});
+
+test("a buy decision says which treasures the buy list leaves out or would never play", () => {
+  const decision = firstBuy.decision!;
+  const playGroup = decision.groups.find((group) => group.kind === "play")!.group;
+  const extra = ["Bank", "Venture"].map((card, offset) => ({ index: decision.options.length + offset, group: playGroup, kind: "card" as const, label: card, card }));
+  const [bank, venture] = extra as [(typeof extra)[0], (typeof extra)[0]];
+  const view: AgentView = {
+    ...firstBuy,
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 4, potions: 0, variable: ["Bank"] } },
+    decision: { ...decision, options: [...decision.options, ...extra] }
+  };
+  const text = renderAgentViewText(view);
+  assert.match(text, new RegExp(`^ {2}NOTE the buy list only counts treasures with a fixed value.* Bank must be played first, one at a time, before buying: ${bank.index} \\(Bank\\)\\.$`, "m"));
+  assert.match(text, new RegExp(`^ {2}NOTE buying a card plays only .*, so Venture may never be played\\. To play it, choose ${venture.index} \\(Venture\\) before buying\\.$`, "m"));
+  assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
 });
