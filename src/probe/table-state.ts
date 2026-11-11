@@ -1,6 +1,7 @@
 import type { CardCounter } from "../knowledge";
 import { Cost, PileView, SupplyPileView, TableState } from "../agent/types";
-import { isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
+import { tableNotes } from "../agent/table-notes";
+import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 
 function cost(card: RuntimeCard | undefined): Cost | undefined {
   const value = card?.cost;
@@ -50,8 +51,16 @@ function trash(zones: RuntimeZone[]): TableState["trash"] {
   return { cards: Object.fromEntries(Object.entries(cards).sort(([a], [b]) => a.localeCompare(b))), unknown };
 }
 
-function gameNumber(): string | undefined {
-  return document.body?.innerText.match(/Game #(\d+)/)?.[1];
+/**
+ * The log opens with the game's id. The page text shows it too, but it still
+ * names the previous game while a new one loads, so no number is better than that one.
+ */
+function gameNumber(game: RuntimeGame): string | undefined {
+  for (const argument of game.logModel?.entries?.[0]?.logArguments ?? []) {
+    const gameId = (argument as { argument?: { gameId?: unknown } } | null)?.argument?.gameId;
+    if (typeof gameId === "number") return String(gameId);
+  }
+  return undefined;
 }
 
 export function summarizeTable(game: RuntimeGame): TableState {
@@ -76,7 +85,8 @@ export function summarizeTable(game: RuntimeGame): TableState {
     .map(pile)
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
-  const number = gameNumber();
+  const number = gameNumber(game);
+  const notes = tableNotes(game.state, Object.keys(dominion.ExtraTurnTypes ?? {}));
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
     .map((player) => ({ index: player.index!, name: player.name ?? `Player ${player.index}` }));
@@ -98,6 +108,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     supply,
     nonSupply,
     landscapes,
-    trash: trash(neutral.filter((zone) => isRuntimeInstance(zone, "TrashZone")))
+    trash: trash(neutral.filter((zone) => isRuntimeInstance(zone, "TrashZone"))),
+    ...(notes.length ? { notes } : {})
   };
 }

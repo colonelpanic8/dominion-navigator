@@ -5,15 +5,12 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { buildCardGlossary, CardDataEntry } from "../src/agent/glossary";
+import { buildCardGlossary, CardDataEntry, supplyCosts, viewCardNames } from "../src/agent/glossary";
 import { createPolicy } from "../src/agent/policies";
 import { renderAgentViewText } from "../src/agent/render-text";
 import type { DecidableView } from "../src/agent/policy";
-import type { AgentView, CardGlossary, Cost } from "../src/agent/types";
-import { CdpClient, connectCdp, debugPort, debugUrl, evaluate, fetchJson } from "./lib/cdp.mjs";
-
-type WaitResult = { status: "decision" | "game-over" | "spectating" | "timeout"; view: AgentView; knowledgeLag: number };
-type AnswerResult = { ok: true; decisionId: string } | { ok: false; error: string };
+import type { CardGlossary } from "../src/agent/types";
+import { DominionClient } from "./lib/dominion-client";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({
@@ -30,33 +27,10 @@ const policy = createPolicy(args.policy!, args.terminal ? { terminal: args.termi
 const maxDecisions = Number(args["max-decisions"]);
 const decisionTimeoutMs = Number(args["decision-timeout-ms"]);
 
-async function dominionPage(port: number): Promise<CdpClient> {
-  const targets = (await fetchJson(debugUrl(port, "/json/list"))) as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
-  const page = targets.find((target) => target.type === "page" && target.url.startsWith("https://dominion.games/"));
-  if (!page) throw new Error(`No dominion.games tab on debug port ${port}. Start one with npm run launch:chrome.`);
-  return connectCdp(page.webSocketDebuggerUrl, { timeoutMs: decisionTimeoutMs + 30_000 });
-}
-
-function call<T>(client: CdpClient, method: string, ...params: unknown[]): Promise<T> {
-  const args = params.map((param) => JSON.stringify(param)).join(", ");
-  return evaluate(client, `window.__dominionNavigator.${method}(${args})`) as Promise<T>;
-}
-
-function cardNames(view: AgentView): Set<string> {
-  const names = new Set<string>();
-  for (const pile of [...view.supply, ...view.nonSupply, ...view.landscapes]) names.add(pile.card);
-  for (const player of [view.you, ...view.opponents]) {
-    if (!player) continue;
-    for (const card of Object.keys(player.owned.known)) names.add(card);
-  }
-  for (const option of view.decision?.options ?? []) if (option.card) names.add(option.card);
-  return names;
-}
-
 async function main(): Promise<void> {
   const cardData = (JSON.parse(await readFile(resolve(root, "data/dominion-card-shaped-objects.json"), "utf8")) as { cardShapedObjects: CardDataEntry[] })
     .cardShapedObjects;
-  const client = await dominionPage(debugPort());
+  const client = new DominionClient();
   const glossary: CardGlossary = {};
   const record = args.record ? resolve(args.record) : undefined;
   if (record) await writeFile(record, "");
@@ -68,7 +42,7 @@ async function main(): Promise<void> {
 
   try {
     for (;;) {
-      const wait = await call<WaitResult>(client, "waitForDecision", { timeoutMs: decisionTimeoutMs });
+      const wait = await client.call("waitForDecision", [{ timeoutMs: decisionTimeoutMs }], { timeoutMs: decisionTimeoutMs });
       const { view } = wait;
       if (wait.status === "spectating") throw new Error("This account is spectating, not playing; refusing to act.");
       if (wait.status === "timeout") throw new Error(`No decision within ${decisionTimeoutMs}ms.`);
@@ -83,16 +57,13 @@ async function main(): Promise<void> {
       }
       if (stats.decisions >= maxDecisions) throw new Error(`Stopped after ${maxDecisions} decisions.`);
 
-      const missing = [...cardNames(view)].filter((name) => !glossary[name]);
-      if (missing.length > 0) {
-        const costs: Record<string, Cost> = Object.fromEntries(view.supply.filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!]));
-        Object.assign(glossary, buildCardGlossary(cardData, missing, costs));
-      }
+      const missing = [...viewCardNames(view)].filter((name) => !glossary[name]);
+      if (missing.length > 0) Object.assign(glossary, buildCardGlossary(cardData, missing, supplyCosts(view)));
 
       const decision = view.decision;
-      const debugState = record ? await call<unknown>(client, "debugState") : undefined;
+      const debugState = record ? await client.call("debugState", []) : undefined;
       const choice = await policy.decide(view as DecidableView, { glossary });
-      const result = await call<AnswerResult>(client, "answer", decision.id, choice.indices);
+      const result = await client.call("answer", [decision.id, choice.indices]);
       stats.decisions += 1;
       bump(stats.questionIds, decision.questionId);
       for (const group of decision.groups) bump(stats.kinds, group.kind);
@@ -105,7 +76,6 @@ async function main(): Promise<void> {
       if (stats.rejected.length >= 5) throw new Error("Too many rejected answers.");
     }
   } finally {
-    client.close();
     console.log(`Decision kinds: ${[...stats.kinds].map(([kind, count]) => `${kind} ${count}`).join(", ")}`);
     console.log(`Question ids: ${[...stats.questionIds].map(([id, count]) => `${id} ${count}`).join(", ")}`);
     if (stats.rejected.length) console.log(`Rejected answers:\n  ${stats.rejected.join("\n  ")}`);

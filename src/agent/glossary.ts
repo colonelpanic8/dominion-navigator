@@ -1,4 +1,4 @@
-import { CardGlossary, Cost } from "./types";
+import { AgentView, CardGlossary, Cost } from "./types";
 
 /** The shape of `cardShapedObjects` entries in data/dominion-card-shaped-objects.json. */
 export type CardDataEntry = {
@@ -42,4 +42,32 @@ export function buildCardGlossary(cardData: CardDataEntry[], names: Iterable<str
     };
   }
   return glossary;
+}
+
+/** Every card a view names: piles, landscapes, known owned cards and decision options. */
+export function viewCardNames(view: AgentView): Set<string> {
+  const names = new Set<string>();
+  for (const pile of [...view.supply, ...view.nonSupply, ...view.landscapes]) names.add(pile.card);
+  for (const player of [view.you, ...view.opponents]) {
+    if (!player) continue;
+    for (const card of Object.keys(player.owned.known)) names.add(card);
+  }
+  for (const option of view.decision?.options ?? []) if (option.card) names.add(option.card);
+  return names;
+}
+
+/** Live costs of the supply piles, for `buildCardGlossary`. */
+export function supplyCosts(view: AgentView): Record<string, Cost> {
+  return Object.fromEntries(view.supply.filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!]));
+}
+
+/** One line per card: name, cost and types, then the text with line breaks flattened. */
+export function renderGlossary(glossary: CardGlossary): string[] {
+  return Object.values(glossary).map((entry) => {
+    const cost = entry.cost
+      ? [`$${entry.cost.coins}`, entry.cost.potions ? `${entry.cost.potions}P` : "", entry.cost.debt ? `${entry.cost.debt}D` : ""].filter(Boolean).join("+")
+      : "";
+    const facts = [cost, entry.types.join("-")].filter(Boolean).join(", ");
+    return `${entry.name}${facts ? ` (${facts})` : ""}: ${entry.text.replace(/\n+/g, " / ") || "no card text on record"}`;
+  });
 }

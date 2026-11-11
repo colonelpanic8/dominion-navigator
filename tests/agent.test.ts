@@ -4,7 +4,7 @@ import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
 import { buildCardGlossary, normalizeCardText } from "../src/agent/glossary";
 import { renderAgentViewText } from "../src/agent/render-text";
-import { ZoneView } from "../src/agent/types";
+import { RawQuestion, ZoneView } from "../src/agent/types";
 import type { CardCounter, KnowledgeSummary } from "../src/knowledge";
 import { fixture, fixtures, optionIndex, view } from "./live-fixtures";
 
@@ -45,6 +45,35 @@ test("exact-count prompts enforce the client's min and max", () => {
     assert.match(errorOf(resolveAnswer(item.rawQuestions[0]!, item.decisionId, [0, 1])), /exactly 1/);
   }
   assert.equal(resolveAnswer(item.rawQuestions[0]!, item.decisionId, [0]).ok, true);
+});
+
+test("an ordering prompt takes every card once, bottom first, or keeps the client's order", () => {
+  // The shape of a live Sentry prompt with a Copper and a Silver left on the deck.
+  const root: RawQuestion = {
+    questionClass: "choice",
+    type: "ORDER_CARDS",
+    questionId: "SENTRY_TOPDECK",
+    prompt: "Topdeck in any order",
+    path: [],
+    min: 2,
+    max: 2,
+    elements: [
+      { kind: "card", label: "Copper", card: "Copper" },
+      { kind: "card", label: "Silver", card: "Silver" }
+    ]
+  };
+  const decision = buildDecision(root, "d24");
+  assert.deepEqual(decision.groups, [{ group: 0, kind: "order-cards", prompt: "Topdeck in any order", min: 2, max: 2, order: "bottom-to-top" }]);
+  assert.deepEqual(
+    decision.options.map((option) => option.label),
+    ["Copper", "Silver", "Keep the current order"]
+  );
+
+  assert.deepEqual(resolveAnswer(root, "d24", [1, 0]), { ok: true, plan: { leaves: [{ path: [], action: "select", elements: [1, 0] }] } });
+  assert.deepEqual(resolveAnswer(root, "d24", [2]), { ok: true, plan: { leaves: [{ path: [], action: "keep-order" }] } });
+  assert.match(errorOf(resolveAnswer(root, "d24", [1])), /exactly 2/);
+  assert.match(errorOf(resolveAnswer(root, "d24", [0, 2])), /on its own/);
+  assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision }), /choose all 2 in order, bottom card first and top card last/);
 });
 
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {

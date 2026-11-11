@@ -36,6 +36,11 @@ export type TableState = {
   nonSupply: PileView[];
   landscapes: PileView[];
   trash: { cards: CardCounter; unknown: number };
+  /**
+   * Public state with no field of its own, one sentence each: tokens, counters on
+   * piles or cards, bought projects, traits, reminders and unusual turns. Absent when there is none.
+   */
+  notes?: string[];
 };
 
 /**
@@ -82,6 +87,8 @@ export type DecisionGroup = {
   prompt: string;
   min: number;
   max: number;
+  /** Set when the order of the chosen options is the answer: the first goes on the bottom, the last on top. */
+  order?: "bottom-to-top";
 };
 
 export type Decision = {
@@ -155,6 +162,8 @@ export type AgentView = {
   nonSupply: PileView[];
   landscapes: PileView[];
   trash: { cards: CardCounter; unknown: number };
+  /** See `TableState.notes`. */
+  notes?: string[];
   decision: Decision | null;
   sinceLastDecision: string[];
 };
@@ -168,3 +177,27 @@ export type GlossaryEntry = {
 };
 
 export type CardGlossary = Record<string, GlossaryEntry>;
+
+/** Where the client is, so a harness can tell why there is no decision without looking at the page. */
+export type SessionState = {
+  screen: "login" | "lobby" | "table" | "game";
+  user?: string;
+  table?: { id?: number; host: boolean; players: string[]; bots: string[]; openSeats: number };
+  /** Present on the game screen. `over`: the result is in and the end-of-game notice is still up. */
+  game?: { over: boolean; opponentsAreBots: boolean };
+};
+
+export type LogEntry = {
+  index: number;
+  /** Nesting depth the client indents the line by. */
+  depth: number;
+  text: string;
+};
+
+export type LogPage = {
+  entries: LogEntry[];
+  /** Index of the newest entry in the game log, or -1 when it is empty. */
+  lastIndex: number;
+};
+
+export type ActionResult = { ok: true; session: SessionState } | { ok: false; error: string };

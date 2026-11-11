@@ -151,6 +151,9 @@ function readQuestion(game: RuntimeGame, question: RuntimeQuestion, path: number
 }
 
 export function openDecisions(game: RuntimeGame): OpenDecision[] {
+  // A question can open before the game area is mounted, and the client's answer
+  // path then throws after it has already sent the answer.
+  if (!game.gameArea) return [];
   return (game.questionModel?.openQuestions ?? []).map((question) => {
     const raw = readQuestion(game, question, []);
     return { question, raw, decision: buildDecision(raw, decisionId(question)) };
