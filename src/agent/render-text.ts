@@ -1,6 +1,6 @@
 import type { CardCounter } from "../knowledge";
 import { completedTurns, TurnSummary } from "./turn-summary";
-import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, ZoneView } from "./types";
+import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, TurnView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
   const entries = Object.entries(counter);
@@ -75,12 +75,18 @@ function decision(value: Decision, costs: Map<string, Cost>, buys: number | unde
   return lines;
 }
 
-function treasureInHand(value: HandTreasure): string {
-  const fixed = [value.coins ? `$${value.coins}` : "", value.potions ? `${value.potions}P` : ""].filter(Boolean).join("+");
+function money(coins: number, potions: number): string {
+  return [`$${coins}`, potions ? `${potions}P` : ""].filter(Boolean).join("+");
+}
+
+/** One total of what the turn can spend, so the reader need not add played and unplayed money. */
+function available(turn: TurnView, hand: HandTreasure): string {
+  const [coins, potions] = [turn.coins ?? 0, turn.potions ?? 0];
+  const unplayed = hand.coins || hand.potions ? ` + ${money(hand.coins, hand.potions)} in unplayed treasures` : "";
   const counted: CardCounter = {};
-  for (const name of value.variable) counted[name] = (counted[name] ?? 0) + 1;
-  const variable = value.variable.length ? `${fixed ? " plus " : ""}${cards(counted)} (varies)` : "";
-  return `unplayed treasures in hand make ${fixed}${variable}`;
+  for (const name of hand.variable) counted[name] = (counted[name] ?? 0) + 1;
+  const variable = hand.variable.length ? `, plus unplayed ${cards(counted)} (value varies)` : "";
+  return `${money(coins + hand.coins, potions + hand.potions)} available (${money(coins, potions)} played${unplayed})${variable}`;
 }
 
 /** Scores and the piles that end the game, which a delta would otherwise only print when they change. */
@@ -118,7 +124,7 @@ function blocks(view: AgentView): Block[] {
     turn.phase ? `${turn.phase} phase` : "",
     ...(["actions", "buys", "coins"] as const).map((key) => (turn[key] !== undefined ? `${key} ${turn[key]}` : "")),
     ...(["potions", "debt"] as const).map((key) => (turn[key] ? `${key} ${turn[key]}` : "")),
-    turn.treasureInHand ? treasureInHand(turn.treasureInHand) : ""
+    turn.treasureInHand ? available(turn, turn.treasureInHand) : ""
   ].filter(Boolean);
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];

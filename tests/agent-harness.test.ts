@@ -225,10 +225,10 @@ test("inspect stops expanding a widely shared graph", () => {
   assert.match(dump, /"key199":/);
 });
 
-test("the status says what the hand's treasures make and the score is always printed", () => {
-  const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
+test("the status totals played and unplayed money and the score is always printed", () => {
+  const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, coins: 2, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
   const text = renderAgentViewText(view);
-  assert.match(text, /^GAME .*, unplayed treasures in hand make \$5 plus Bank \(varies\)$/m);
+  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value varies\)$/m);
   assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
