@@ -342,3 +342,23 @@ test("a pile's Trait is shown on the pile and on every option for its cards", ()
   assert.match(text, new RegExp(`^ {4}${witch.index}: Witch \\$5 \\[trait: Reckless\\]$`, "m"));
   assert.match(renderAgentViewDelta(firstBuy, view), /^SUPPLY \(changed\) Witch \$5 x10 \[trait: Reckless\]$/m);
 });
+
+test("a log the client rebuilt shorter, as after a reload, gets a full view instead of a delta", async () => {
+  const { client } = fakeClient([firstBuy]);
+  const call = client.call as (method: string, params: unknown[]) => Promise<unknown>;
+  let rebuilt = false;
+  const reloading = {
+    call: async (method: string, params: unknown[]) => {
+      const result = await call(method, params);
+      if (method !== "getLog" || !rebuilt) return result;
+      const { entries } = result as { entries: Array<{ index: number }> };
+      return { entries: entries.filter((entry) => entry.index < 2), lastIndex: 1 };
+    }
+  } as Parameters<typeof createDominionTools>[0];
+  const tools = createDominionTools(reloading, cardData);
+  await tool(tools, "wait").run({}, live);
+  rebuilt = true;
+  const again = await tool(tools, "wait").run({}, live);
+  assert.match(again, /^YOU: /m);
+  assert.match(again, /^LOG$/m);
+});

@@ -109,8 +109,13 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
    */
   const present = async (view: AgentView, mode: "full" | "delta", signal: AbortSignal): Promise<string[]> => {
     const number = view.game.number;
-    const previous = mode === "delta" && shown && number !== undefined && shown.view.game.number === number ? shown : undefined;
-    const log = await client.call("getLog", [previous ? { afterIndex: previous.logIndex, limit: MAX_LOG_LINES } : { limit: RECENT_LOG_LINES }]);
+    let previous = mode === "delta" && shown && number !== undefined && shown.view.game.number === number ? shown : undefined;
+    let log = await client.call("getLog", [previous ? { afterIndex: previous.logIndex, limit: MAX_LOG_LINES } : { limit: RECENT_LOG_LINES }]);
+    if (previous && log.lastIndex < previous.logIndex) {
+      // The client rebuilt a shorter log, as after a reload, so a delta against it would skip lines.
+      previous = undefined;
+      log = await client.call("getLog", [{ limit: RECENT_LOG_LINES }]);
+    }
     // A cancelled call's result is never read, so it must not count as shown.
     signal.throwIfAborted();
     const lines = log.entries.map((entry) => entry.text);
