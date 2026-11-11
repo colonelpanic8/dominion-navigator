@@ -32,6 +32,8 @@ export type TableState = {
   turn: {
     number?: number;
     activePlayerIndex?: number;
+    /** Set on an extra turn: its kind, e.g. "seize the day". */
+    extra?: string;
   };
   /** The Treasures in this seat's hand, not yet played. Undefined when spectating. */
   handTreasure?: HandTreasure;
@@ -42,7 +44,7 @@ export type TableState = {
   trash: { cards: CardCounter; unknown: number };
   /**
    * Public state with no field of its own, one sentence each: tokens, counters on
-   * piles or cards, bought projects, traits, reminders and unusual turns. Absent when there is none.
+   * piles or cards, bought projects, reminders and who controls the turn. Absent when there is none.
    */
   notes?: string[];
 };
@@ -157,6 +159,8 @@ export type HandTreasure = {
 
 export type TurnView = {
   number?: number;
+  /** See `TableState.turn.extra`. */
+  extra?: string;
   activePlayer?: string;
   yourTurn: boolean;
   phase: "action" | "buy" | null;

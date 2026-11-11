@@ -192,7 +192,7 @@ type Block =
 function blocks(view: AgentView): Block[] {
   const turn = view.turn;
   const status = [
-    turn.number !== undefined ? `turn ${turn.number}` : "",
+    turn.number !== undefined ? `turn ${turn.number}${turn.extra ? ` (extra turn: ${turn.extra})` : ""}` : turn.extra ? `extra turn: ${turn.extra}` : "",
     turn.activePlayer ? `${turn.yourTurn ? "your turn" : `${turn.activePlayer}'s turn`}` : "",
     turn.phase ? `${turn.phase} phase` : "",
     ...(["actions", "buys", "coins"] as const).map((key) => (turn[key] !== undefined ? `${key} ${turn[key]}` : "")),

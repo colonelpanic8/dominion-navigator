@@ -4,7 +4,7 @@ import { createDominionTools } from "../scripts/lib/dominion-tools";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
 import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../src/agent/render-text";
-import { tableNotes } from "../src/agent/table-notes";
+import { extraTurnKind, tableNotes } from "../src/agent/table-notes";
 import type { AgentView, SessionState } from "../src/agent/types";
 import { fixtures } from "./live-fixtures";
 
@@ -160,8 +160,7 @@ test("table notes report expansion state the view has no field for, and nothing 
       { counterName: { name: "Embargo Tokens" }, owner: nobody, value: 0, associatedPile: village, associatedCard: null }
     ]
   };
-  const turnKinds = ["REGULAR", "BETWEEN", "POSSESSION", "MISSION", "OUTPOST"];
-  assert.deepEqual(tableNotes(plain, turnKinds), []);
+  assert.deepEqual(tableNotes(plain), []);
 
   const busy = {
     ...plain,
@@ -175,8 +174,7 @@ test("table notes report expansion state the view has no field for, and nothing 
       { counterName: { name: "VP Tokens" }, owner: nobody, value: 3, associatedPile: nowhere, associatedCard: { cardName: { name: "Temple" } } }
     ]
   };
-  assert.deepEqual(tableNotes(busy, turnKinds), [
-    "This is an extra turn (possession).",
+  assert.deepEqual(tableNotes(busy), [
     "Bob controls this turn.",
     "Bob's +Action token is on Village.",
     "Embargo Tokens 1 on Village.",
@@ -303,4 +301,13 @@ test("a result says how the game ended when the supply or a resignation shows it
   assert.doesNotMatch(over(emptied("Curse", "Moat")), /ended/);
   const resigned = { players: [players[0]!, { ...players[1]!, resigned: true }] };
   assert.match(over(secondBuy.supply, resigned), /Lord Rattington 18 VP in 16 turns \(resigned\); ended because Lord Rattington resigned$/);
+});
+
+test("an extra turn is marked on the status line", () => {
+  const turnKinds = ["REGULAR", "POSSESSION", "MISSION", "OUTPOST", "SEIZE_THE_DAY"];
+  assert.equal(extraTurnKind(0, turnKinds), undefined);
+  assert.equal(extraTurnKind(4, turnKinds), "seize the day");
+  assert.equal(extraTurnKind(9, turnKinds), "type 9");
+  const extra: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, number: 12, extra: "seize the day" } };
+  assert.match(renderAgentViewText(extra), /^GAME \d+: turn 12 \(extra turn: seize the day\), your turn, /);
 });

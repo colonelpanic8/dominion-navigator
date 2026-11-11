@@ -12,19 +12,24 @@ function cardLabel(value: unknown): string | undefined {
   return name && name !== "Back" ? name : undefined;
 }
 
+/** The kind of an extra turn, or undefined for a regular one. `turnKinds` are the client's turn kinds in ordinal order, regular first. */
+export function extraTurnKind(turnType: number | undefined, turnKinds: string[]): string | undefined {
+  if (!turnType) return undefined;
+  const kind = turnKinds[turnType];
+  return kind ? kind.toLowerCase().replace(/_/g, " ") : `type ${turnType}`;
+}
+
 /**
  * State the view has no field for, one sentence per fact, read generically from
  * the client's state. These objects only exist in games with the expansions that
- * use them. `turnKinds` are the client's turn kinds in ordinal order, regular first.
+ * use them.
  */
-export function tableNotes(state: RuntimeState | undefined, turnKinds: string[]): string[] {
+export function tableNotes(state: RuntimeState | undefined): string[] {
   const seated = (player: { index?: number; name?: string } | undefined): string | undefined =>
     player && (player.index ?? -1) >= 0 ? (player.name ?? `Player ${player.index}`) : undefined;
   const notes: string[] = [];
 
   const turn = state?.activeTurn;
-  const turnKind = turnKinds[turn?.turnType ?? 0];
-  if (turn?.turnType) notes.push(`This is an extra turn (${turnKind ? turnKind.toLowerCase().replace(/_/g, " ") : `type ${turn.turnType}`}).`);
   if (turn?.controllerId !== undefined && turn.ownerId !== undefined && turn.controllerId !== turn.ownerId) {
     const controller = (state?.players ?? []).find((player) => player.index === turn.controllerId);
     notes.push(`${seated(controller) ?? `Player ${turn.controllerId}`} controls this turn.`);
