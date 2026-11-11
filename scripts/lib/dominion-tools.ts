@@ -16,7 +16,7 @@ export const INSTRUCTIONS = [
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0.",
   "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
-  "Counts marked unknown are cards this player cannot know. Views never contain hidden information.",
+  "Views never contain hidden information. A zone's `N unknown` counts cards you cannot identify, usually because they moved while face down, such as an opponent's hand being discarded; it is not an error. A line like `hand+discard hold 3 of: Copper, 2 Silver` means those cards are split between those zones in a way you cannot see; with `, 1 of them elsewhere`, one of the listed cards is in some other zone.",
   "`inspect` reads raw client state for debugging and can show more than a player may know, so do not use it to choose plays."
 ].join(" ");
 
