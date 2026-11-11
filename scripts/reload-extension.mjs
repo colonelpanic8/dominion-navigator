@@ -1,4 +1,6 @@
-import { connectCdp, debugPort, debugUrl, evaluate, fetchJson, sleep } from "./lib/cdp.mjs";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { chromeProfile, connectCdp, debugPort, debugUrl, evaluate, fetchJson, LAUNCHER_PID_FILE, sleep } from "./lib/cdp.mjs";
 
 const port = debugPort();
 const extensionPath = new URL("../dist/", import.meta.url).pathname.replace(/\/$/, "");
@@ -19,29 +21,69 @@ async function getOrOpenExtensionsPage() {
   throw new Error("Unable to open chrome://extensions.");
 }
 
+const findExtension = `chrome.developerPrivate.getExtensionsInfo({ includeDisabled: true, includeTerminated: true }, resolve)`;
+
+async function extensionInfo(client) {
+  return evaluate(
+    client,
+    `(async () => {
+      const infos = await new Promise((resolve) => ${findExtension});
+      const extension = infos.find((info) => info.name === "Dominion Navigator" || info.path === ${JSON.stringify(extensionPath)});
+      return extension && { id: extension.id, state: extension.state, disableReasons: extension.disableReasons };
+    })()`
+  );
+}
+
+async function launcherPid() {
+  try {
+    const pid = Number((await readFile(resolve(chromeProfile(), LAUNCHER_PID_FILE), "utf8")).trim());
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Branded Chrome disables an unpacked extension reloaded through
+ * chrome.developerPrivate, so prefer asking the launcher to reload it over its
+ * DevTools pipe, and verify the extension is still enabled afterwards.
+ */
 async function reloadExtension() {
   const page = await getOrOpenExtensionsPage();
   const client = await connectCdp(page.webSocketDebuggerUrl);
-  await client.send("Runtime.enable");
+  try {
+    await client.send("Runtime.enable");
+    const before = await extensionInfo(client);
+    if (!before) throw new Error("Dominion Navigator is not loaded.");
 
-  const expression = `(async () => {
-    const infos = await new Promise((resolve) => chrome.developerPrivate.getExtensionsInfo(
-      { includeDisabled: true, includeTerminated: true },
-      resolve
-    ));
-    const extension = infos.find((info) => info.name === "Dominion Navigator" || info.path === ${JSON.stringify(extensionPath)});
-    if (!extension) return { ok: false, reason: "Dominion Navigator is not loaded." };
-    const reload = await new Promise((resolve) => chrome.developerPrivate.reload(
-      extension.id,
-      { failQuietly: false },
-      () => resolve({ lastError: chrome.runtime.lastError?.message ?? null })
-    ));
-    return { ok: !reload.lastError, id: extension.id, path: extension.path, reason: reload.lastError };
-  })()`;
+    const pid = await launcherPid();
+    if (pid) {
+      process.kill(pid, "SIGHUP");
+      await sleep(1000);
+    } else {
+      await evaluate(
+        client,
+        `new Promise((resolve) => chrome.developerPrivate.reload(${JSON.stringify(before.id)}, { failQuietly: false }, () => resolve(chrome.runtime.lastError?.message ?? null)))`
+      );
+    }
 
-  const value = await evaluate(client, expression).finally(() => client.close());
-  if (!value?.ok) throw new Error(value?.reason ?? "Extension reload failed.");
-  return value;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const info = await extensionInfo(client);
+      if (info?.state === "ENABLED") return info;
+      await sleep(200);
+    }
+    const info = await extensionInfo(client);
+    const reasons = Object.entries(info?.disableReasons ?? {})
+      .filter(([, value]) => value)
+      .map(([key]) => key);
+    throw new Error(
+      `Dominion Navigator is ${info?.state ?? "missing"} after reload${reasons.length ? ` (${reasons.join(", ")})` : ""}. ` +
+        "Start Chrome with `npm run launch:chrome` so reloads go through its DevTools pipe."
+    );
+  } finally {
+    client.close();
+  }
 }
 
 async function reloadDominionPages() {

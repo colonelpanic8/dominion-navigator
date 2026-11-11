@@ -1,4 +1,10 @@
 export const DEFAULT_DEBUG_PORT = 9226;
+export const DEFAULT_CHROME_PROFILE = "/tmp/dominion-navigator-chrome-profile4";
+export const LAUNCHER_PID_FILE = "launcher.pid";
+
+export function chromeProfile() {
+  return process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? DEFAULT_CHROME_PROFILE;
+}
 
 export function debugPort(...legacyEnvNames) {
   for (const name of ["DOMINION_NAVIGATOR_DEBUG_PORT", ...legacyEnvNames]) {
@@ -31,7 +37,7 @@ export function createCdpSession(write, { timeoutMs } = {}) {
   const pending = new Map();
 
   return {
-    send(method, params = {}) {
+    send(method, params = {}, sessionId = undefined) {
       return new Promise((resolve, reject) => {
         const id = nextId++;
         const timer =
@@ -44,7 +50,7 @@ export function createCdpSession(write, { timeoutMs } = {}) {
           clearTimeout(timer);
           resolve(message);
         });
-        write(JSON.stringify({ id, method, params }));
+        write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
       });
     },
     receive(raw) {

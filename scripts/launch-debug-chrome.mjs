@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdir, open } from "node:fs/promises";
+import { mkdir, open, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCdpSession, debugPort, debugUrl, sleep } from "./lib/cdp.mjs";
+import { chromeProfile, createCdpSession, debugPort, debugUrl, LAUNCHER_PID_FILE, sleep } from "./lib/cdp.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const extensionPath = resolve(root, "dist");
 const chrome = process.env.CHROME ?? "google-chrome-stable";
-const profile = process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? "/tmp/dominion-navigator-chrome-profile4";
+const profile = chromeProfile();
+const pidFile = resolve(profile, LAUNCHER_PID_FILE);
 const port = debugPort();
 const url = process.env.DOMINION_NAVIGATOR_URL ?? "https://dominion.games/";
 const BLANK_PAGE_URLS = new Set(["about:blank", "chrome://newtab/", "chrome://new-tab-page/"]);
@@ -67,25 +68,37 @@ child.on("exit", (code, signal) => {
   process.exit(code ?? 1);
 });
 
-const loadResult = await send("Extensions.loadUnpacked", { path: extensionPath });
-if (loadResult.error) {
-  throw new Error(`Extensions.loadUnpacked failed: ${loadResult.error.message}`);
+// Branded Chrome disables unpacked extensions that are reloaded any other way,
+// so reloads also go through this pipe (see reload-extension.mjs).
+async function loadExtension() {
+  const result = await send("Extensions.loadUnpacked", { path: extensionPath });
+  if (result.error) throw new Error(`Extensions.loadUnpacked failed: ${result.error.message}`);
+  return result.result.id;
 }
 
-// Open the URL only now: tabs that loaded before the extension never get its content script.
-const blankPages = ((await send("Target.getTargets")).result?.targetInfos ?? []).filter(
-  (target) => target.type === "page" && BLANK_PAGE_URLS.has(target.url)
-);
-await send("Target.createTarget", { url });
-for (const page of blankPages) await send("Target.closeTarget", { targetId: page.targetId });
+const extensionId = await loadExtension();
+
+// Pages that loaded before the extension (including restored tabs) never get its
+// content script, so reload those and open the URL only if no tab shows it yet.
+const pages = ((await send("Target.getTargets")).result?.targetInfos ?? []).filter((target) => target.type === "page");
+for (const page of pages.filter((target) => !BLANK_PAGE_URLS.has(target.url))) {
+  const attached = await send("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+  const sessionId = attached.result?.sessionId;
+  if (sessionId) await send("Page.reload", {}, sessionId);
+}
+if (!pages.some((target) => target.url.startsWith(url))) await send("Target.createTarget", { url });
+for (const page of pages.filter((target) => BLANK_PAGE_URLS.has(target.url))) await send("Target.closeTarget", { targetId: page.targetId });
 
 await waitForDebugPort();
-console.log(`Dominion Navigator loaded as ${loadResult.result.id}`);
+console.log(`Dominion Navigator loaded as ${extensionId}`);
 console.log(`Chrome debug port: http://127.0.0.1:${port}`);
 console.log(`Profile: ${profile}`);
 
+await writeFile(pidFile, `${process.pid}\n`);
+
 async function shutdown() {
   try {
+    await rm(pidFile, { force: true });
     await send("Browser.close");
   } finally {
     process.exit(0);
@@ -94,6 +107,12 @@ async function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.on("SIGHUP", () => {
+  loadExtension().then(
+    (id) => console.log(`Reloaded Dominion Navigator as ${id}`),
+    (error) => console.error(String(error))
+  );
+});
 
 // Keep the launcher process alive even when it is started detached with stdin
 // connected to /dev/null. Chrome's remote-debugging pipe closes when this

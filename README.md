@@ -59,7 +59,7 @@ Launch a dedicated Chrome profile with the unpacked extension loaded:
 npm run launch:chrome
 ```
 
-Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. It accepts these environment variables:
+Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. The launcher accepts these environment variables:
 
 - `CHROME`: Chrome binary (default `google-chrome-stable` on `PATH`).
 - `DOMINION_NAVIGATOR_CHROME_PROFILE`: profile directory (default `/tmp/dominion-navigator-chrome-profile4`).
