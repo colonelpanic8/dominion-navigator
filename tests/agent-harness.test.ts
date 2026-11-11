@@ -184,6 +184,29 @@ test("table notes report expansion state the view has no field for, and nothing 
   ]);
 });
 
+test("table notes name landscape piles by their card and say when a token is on no pile", () => {
+  const ann = { index: 0, name: "Ann" };
+  const nobody = { index: -1 };
+  const battlefield = { pileName: { name: "Back" }, cardStacks: [{ topCard: { cardName: { name: "Battlefield" } } }] };
+  const setAside = { zoneName: "SetAsideZone", pileName: { name: "Back" }, cardStacks: [{ topCard: { cardName: { name: "Village" } } }] };
+  const tavern = { zoneName: "TavernZone", owner: ann };
+  const state = {
+    players: [ann],
+    tokens: [
+      { tokenName: { name: "-Card token" }, owner: ann, zone: setAside },
+      { tokenName: { name: "Journey token" }, owner: nobody, zone: setAside, isFlipped: true },
+      { tokenName: { name: "Estate token" }, owner: ann, zone: tavern }
+    ],
+    counters: [{ counterName: { name: "VP Tokens" }, owner: nobody, value: 12, associatedPile: battlefield, associatedCard: null }]
+  };
+  assert.deepEqual(tableNotes(state, new Set([battlefield])), [
+    "Ann has their -Card token, not on a pile.",
+    "Journey token (face down) is not on a pile.",
+    "Ann's Estate token is on their Tavern mat.",
+    "VP Tokens 12 on Battlefield."
+  ]);
+});
+
 test("wait shows a forced decision without answering it in a game against people", async () => {
   const { answers, client } = fakeClient([startGame, firstBuy], false);
   const shownView = await tool(createDominionTools(client, cardData), "wait").run({}, live);

@@ -117,7 +117,8 @@ export function summarizeTable(game: RuntimeGame): TableState {
       return view ? { ...view, kingdom: isRuntimeInstance(zone, "SupplyCardZone") } : undefined;
     })
     .filter((view): view is SupplyPileView => Boolean(view));
-  const landscapes = ofKind("landscape")
+  const landscapeZones = ofKind("landscape");
+  const landscapes = landscapeZones
     .map(pile)
     .filter((view): view is PileView => Boolean(view));
   const nonSupply = ofKind("non-supply")
@@ -125,7 +126,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
   const number = gameNumber(game);
-  const notes = tableNotes(game.state);
+  const notes = tableNotes(game.state, new Set(landscapeZones));
   const treasure = handTreasure(game, zones);
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
