@@ -113,6 +113,35 @@ test("hand cards list by cost, then name, whatever order the client sends them i
   assert.match(text, /^ {4}4: Trash nothing \(decline\)$/m);
 });
 
+test("the groups of an OR question are shown as alternatives", () => {
+  // The shape of a live Wayfarer gain: either group answers it.
+  const root: RawQuestion = {
+    questionClass: "complex",
+    type: "COMPLEX_OR",
+    questionId: "WAYFARER",
+    prompt: "Gain a Silver",
+    path: [],
+    subquestions: [
+      { questionClass: "choice", type: "GAIN", questionId: "WAYFARER", prompt: "Gain a Silver", path: [0], min: 1, max: 1, declineLabel: "Don't Gain", elements: [{ kind: "card", label: "Silver", card: "Silver" }] },
+      { questionClass: "choice", type: "CHOOSE_MODE", questionId: "WAYFARER", prompt: "Choose", path: [1], min: 1, max: 1, elements: [{ kind: "mode", label: "Gain Silver" }] }
+    ]
+  };
+  const decision = buildDecision(root, "d70");
+  assert.deepEqual(decision.alternatives, [[0], [1]]);
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision });
+  assert.match(text, /^DECISION d70: Gain a Silver\n {2}answer ONE of these groups, not several\n {2}\[gain\]/m);
+  assert.match(errorOf(resolveAnswer(root, "d70", [0, 2])), /different groups/);
+
+  const buyPhase = view(fixture("GAME_BUY_PHASE", ["buy", "play", "button"])).decision!;
+  assert.deepEqual(buyPhase.alternatives, [[0], [1], [2]]);
+  const andRoot: RawQuestion = { ...root, type: "COMPLEX_AND" };
+  assert.equal(buildDecision(andRoot, "d71").alternatives, undefined);
+  const nested: RawQuestion = { ...root, subquestions: [{ ...andRoot, path: [0], subquestions: root.subquestions!.map((sub, index) => ({ ...sub, path: [0, index] })) }, { ...root.subquestions![1]!, path: [1] }] };
+  const together = buildDecision(nested, "d72");
+  assert.deepEqual(together.alternatives, [[0, 1], [2]]);
+  assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: together }), /answer ONE of these groups, not several; \[gain\] and \[choose-mode\] may be answered together$/m);
+});
+
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {
   const zones = knowledge.players.find((player) => player.player.index === playerIndex)?.zones.filter((zone) => zone.zoneName === zoneName) ?? [];
   const known: CardCounter = {};

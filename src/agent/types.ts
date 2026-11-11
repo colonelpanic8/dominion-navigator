@@ -106,6 +106,11 @@ export type Decision = {
   min?: number;
   max?: number;
   groups: DecisionGroup[];
+  /**
+   * Present when the groups are alternatives: an answer takes options from one
+   * entry's groups only. Groups in the same entry may be answered together.
+   */
+  alternatives?: number[][];
   options: DecisionOption[];
 };
 

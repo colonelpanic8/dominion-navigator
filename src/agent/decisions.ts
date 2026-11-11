@@ -152,6 +152,13 @@ function index(root: RawQuestion, id: string): Indexed {
   }
 
   const single = groups.length === 1 ? groups[0] : undefined;
+  const branches = new Map<number, number[]>();
+  if (root.type === "COMPLEX_OR") {
+    for (const { question, group } of leaves) {
+      const branch = question.path[root.path.length]!;
+      branches.set(branch, [...(branches.get(branch) ?? []), group.group]);
+    }
+  }
   return {
     decision: {
       id,
@@ -160,6 +167,7 @@ function index(root: RawQuestion, id: string): Indexed {
       kind: single ? single.kind : kebab(root.type),
       ...(single ? { min: single.min, max: single.max } : {}),
       groups,
+      ...(branches.size > 1 ? { alternatives: [...branches.values()] } : {}),
       options
     },
     leaves,

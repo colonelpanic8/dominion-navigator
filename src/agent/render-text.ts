@@ -87,6 +87,11 @@ function decision(view: AgentView, value: Decision): string[] {
   const costs = pileCosts(view);
   const landscapeTypes = new Map(view.landscapes.map((pile) => [pile.card, pile.types[0]] as const));
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
+  if (value.alternatives) {
+    const kinds = (groups: number[]): string => groups.map((group) => `[${value.groups[group]?.kind}]`).join(" and ");
+    const together = value.alternatives.filter((groups) => groups.length > 1).map((groups) => `; ${kinds(groups)} may be answered together`);
+    lines.push(`  answer ONE of these groups, not several${together.join("")}`);
+  }
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
     const bounds = group.order
