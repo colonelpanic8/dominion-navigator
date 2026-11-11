@@ -9,12 +9,13 @@
     "build": "node scripts/build.mjs",
     "package": "node scripts/package-extension.mjs",
     "test": "node --test --import tsx tests/*.test.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tests",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "check": "npm run icons && npm run typecheck && npm run test && npm run build && npm run package",
     "launch:chrome": "node scripts/launch-debug-chrome.mjs",
     "reload:extension": "node scripts/reload-extension.mjs",
     "dev": "node scripts/dev.mjs",
-    "dev:build": "node scripts/dev.mjs --no-auto-reload"
+    "dev:build": "node scripts/dev.mjs --no-auto-reload",
+    "agent:play": "node --import tsx scripts/agent-play.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

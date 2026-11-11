@@ -30,11 +30,15 @@ The knowledge model separates Dominion's internal zone state from what the playe
 
 ## Source Layout
 
-- `src/messages.ts`: the `window.postMessage` protocol between the page probe and the content script (`ProbeMessage` from the probe, `ContentCommand` to it).
-- `src/page-probe.ts`: page-context entry point: probe state, client hooks, and command handling.
+- `src/messages.ts`: the `window.postMessage` protocol between the page probe and the content script (`ProbeMessage` from the probe, `ContentCommand` to it). `src/message-bus.ts` posts and receives them; `src/message-validation.ts` checks every incoming message's shape, since any page script can post on the same channel.
+- `src/page-probe.ts`: page-context entry point: probe state, client hooks, command handling, and the agent API.
   - `src/probe/runtime-types.ts`: the client objects the probe reads.
   - `src/probe/summaries.ts`: serializes zones, snapshots, and card moves.
   - `src/probe/knowledge-modal.ts`: the card-details modal, rendered with the client's own card stacks.
+  - `src/probe/questions.ts`: reads the client's open questions and answers them.
+  - `src/probe/table-state.ts`: public table state (supply, landscapes, trash, counters, turn).
+  - `src/probe/agent-bridge.ts`: the agent API on `window.__dominionNavigator`.
+- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text rendering, decision building and answer validation (`decisions.ts`), the card glossary, and policies.
 - `src/content-script.ts`: extension entry point that wires the pieces below together.
   - `src/content/overlay.ts`: the shadow-DOM overlay.
   - `src/content/knowledge-window.ts`: builds the card-details modal payload.
@@ -59,7 +63,7 @@ Launch a dedicated Chrome profile with the unpacked extension loaded:
 npm run launch:chrome
 ```
 
-Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. It accepts these environment variables:
+Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. The launcher accepts these environment variables:
 
 - `CHROME`: Chrome binary (default `google-chrome-stable` on `PATH`).
 - `DOMINION_NAVIGATOR_CHROME_PROFILE`: profile directory (default `/tmp/dominion-navigator-chrome-profile4`).
@@ -85,11 +89,32 @@ To use your normal Chrome profile instead, open `chrome://extensions`, enable De
 npm run dev:build
 ```
 
-Before pushing, run the same checks as CI (icons, type-check of `src/` and `tests/`, tests, build, and the release zip in `releases/`):
+Before pushing, run the same checks as CI (icons, type-check of `src/`, `tests/` and `scripts/`, tests, build, and the release zip in `releases/`):
 
 ```sh
 npm run check
 ```
+
+## Agent API
+
+The probe exposes a machine-readable view of the game and a way to answer the game's questions, for harnesses that drive a game over CDP:
+
+```js
+window.__dominionNavigator.getAgentView()      // dominion-navigator/agent-view@1 JSON
+window.__dominionNavigator.getAgentViewText()  // compact text rendering of the same view
+await window.__dominionNavigator.waitForDecision({ timeoutMs: 60000 })
+window.__dominionNavigator.answer(decisionId, [optionIndex, ...])
+```
+
+The view combines public table state (supply, landscapes, trash, counters) with per-player card knowledge taken only from the knowledge model, so it never contains hidden information the player could not know. `decision` lists the open question's option groups and options. `answer` only accepts option indices for a decision that is still open, enforces each group's min/max, and refuses to act when the account is spectating. The turn phase is derived from the open decision, since the client does not track it.
+
+`scripts/agent-play.ts` plays the current game through this API with a pluggable policy (`src/agent/policy.ts`). The included `big-money` policy plays treasures and buys Province at $8, Gold at $6-7 and Silver at $3-5, with an optional terminal Action:
+
+```sh
+npm run agent:play -- --policy big-money --terminal Remodel --record decisions.jsonl
+```
+
+`--record` writes one JSON line per decision (view, text rendering, choice, result) plus a per-game card glossary built from `data/dominion-card-shaped-objects.json`.
 
 ## Debugging
 

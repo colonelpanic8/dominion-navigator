@@ -1,4 +1,5 @@
-import { MESSAGE_SOURCE, postNavigatorMessage } from "../messages";
+import { postNavigatorMessage } from "../message-bus";
+import { MESSAGE_SOURCE } from "../messages";
 
 export function postStatus(ok: boolean, reason?: string): void {
   postNavigatorMessage({

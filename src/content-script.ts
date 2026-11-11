@@ -11,14 +11,8 @@ import {
   storedStateMatchesSnapshot
 } from "./content/persistence";
 import { DeckKnowledgeTracker, KnowledgeSummary } from "./knowledge";
-import {
-  CardMoveSummary,
-  listenForNavigatorMessages,
-  MESSAGE_SOURCE,
-  NavigatorSnapshot,
-  postNavigatorMessage,
-  ZoneDetail
-} from "./messages";
+import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
+import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot, ZoneDetail } from "./messages";
 import { AnonymousTopdeckQueue } from "./topdeck-tracking";
 
 const RECENT_MOVE_LIMIT = 30;
@@ -33,6 +27,8 @@ let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
 let pendingHeroDrawWindowOpen = false;
 let resizeSnapshotTimer: number | undefined;
+/** The latest probe event folded into the tracker; echoed back so the probe knows how fresh its knowledge is. */
+let latestEventSeq = 0;
 
 const overlay = createOverlay(
   {
@@ -66,8 +62,13 @@ function persist(snapshot: NavigatorSnapshot): void {
   persistState(snapshot, tracker, recentMoves.slice(-RECENT_MOVE_LIMIT));
 }
 
-/** Re-renders tracker-derived views and persists the tracker. */
+function publishKnowledge(summary: KnowledgeSummary): void {
+  postNavigatorMessage({ source: MESSAGE_SOURCE, type: "knowledge-update", payload: { seq: latestEventSeq, summary } });
+}
+
+/** Re-renders tracker-derived views, persists the tracker, and shares it with the probe. */
 function refreshKnowledge(summary: KnowledgeSummary = tracker.summary()): void {
+  publishKnowledge(summary);
   overlay.renderKnowledge(summary);
   if (!latestSnapshot) return;
   overlay.renderZones(summary, latestSnapshot);
@@ -113,6 +114,7 @@ function handleSnapshot(snapshot: NavigatorSnapshot): void {
   latestSnapshot = snapshot;
   if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
   const summary = invariants.checkSnapshot(snapshot);
+  publishKnowledge(summary);
   overlay.renderSnapshotStatus(snapshot);
   overlay.renderKnowledge(summary);
   overlay.renderZones(summary, snapshot);
@@ -176,9 +178,11 @@ listenForNavigatorMessages((message) => {
       if (!message.payload.ok) overlay.setStatus(message.payload.reason ?? "Probe is not ready.");
       return;
     case "snapshot":
+      latestEventSeq = message.seq;
       handleSnapshot(message.payload);
       return;
     case "card-move":
+      latestEventSeq = message.seq;
       handleCardMove(message.payload);
       return;
   }
