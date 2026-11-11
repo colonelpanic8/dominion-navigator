@@ -36,6 +36,11 @@ export type TableState = {
   nonSupply: PileView[];
   landscapes: PileView[];
   trash: { cards: CardCounter; unknown: number };
+  /**
+   * Public state with no field of its own, one sentence each: tokens, counters on
+   * piles or cards, bought projects, traits, reminders and unusual turns. Absent when there is none.
+   */
+  notes?: string[];
 };
 
 /**
@@ -157,6 +162,8 @@ export type AgentView = {
   nonSupply: PileView[];
   landscapes: PileView[];
   trash: { cards: CardCounter; unknown: number };
+  /** See `TableState.notes`. */
+  notes?: string[];
   decision: Decision | null;
   sinceLastDecision: string[];
 };

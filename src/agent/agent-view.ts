@@ -147,6 +147,7 @@ export function buildAgentView({ table, knowledge, decision, sinceLastDecision }
     nonSupply: table.nonSupply,
     landscapes: table.landscapes,
     trash: table.trash,
+    ...(table.notes?.length ? { notes: table.notes } : {}),
     decision: spectating ? null : decision,
     sinceLastDecision
   };

@@ -239,6 +239,8 @@ export type DominionGlobals = {
   QuestionTypes?: Record<string, RuntimeEnumValue>;
   QuestionIds?: Record<string, RuntimeEnumValue>;
   TableRuleIds?: Record<string, RuntimeEnumValue>;
+  /** Keys are turn kinds in ordinal order, REGULAR first. */
+  ExtraTurnTypes?: Record<string, RuntimeEnumValue>;
   TableRule?: new (id: RuntimeEnumValue, value: unknown, args?: unknown) => unknown;
   Expansions?: Record<string, unknown>;
   DeclineButtonIds?: Record<string, RuntimeEnumValue>;

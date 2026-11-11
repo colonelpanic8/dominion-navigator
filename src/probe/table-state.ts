@@ -1,6 +1,7 @@
 import type { CardCounter } from "../knowledge";
 import { Cost, PileView, SupplyPileView, TableState } from "../agent/types";
-import { isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
+import { tableNotes } from "../agent/table-notes";
+import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 
 function cost(card: RuntimeCard | undefined): Cost | undefined {
   const value = card?.cost;
@@ -82,6 +83,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
   const number = gameNumber(game);
+  const notes = tableNotes(game.state, Object.keys(dominion.ExtraTurnTypes ?? {}));
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
     .map((player) => ({ index: player.index!, name: player.name ?? `Player ${player.index}` }));
@@ -103,6 +105,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     supply,
     nonSupply,
     landscapes,
-    trash: trash(neutral.filter((zone) => isRuntimeInstance(zone, "TrashZone")))
+    trash: trash(neutral.filter((zone) => isRuntimeInstance(zone, "TrashZone"))),
+    ...(notes.length ? { notes } : {})
   };
 }

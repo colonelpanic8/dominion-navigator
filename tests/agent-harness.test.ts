@@ -4,6 +4,7 @@ import { createDominionTools } from "../scripts/lib/dominion-tools";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
 import { renderAgentViewDelta, renderAgentViewText } from "../src/agent/render-text";
+import { tableNotes } from "../src/agent/table-notes";
 import type { AgentView, SessionState } from "../src/agent/types";
 import { fixtures } from "./live-fixtures";
 
@@ -114,4 +115,49 @@ test("inspect bounds cyclic client objects and follows paths through maps", () =
   assert.deepEqual(inspectPath({ game: () => state }, "game.costs.Copper"), { ok: true, path: "game.costs.Copper", value: { coin: 0 } });
   assert.deepEqual(inspectPath({ game: () => state }, "game.cards.3.cardName"), { ok: false, error: "game.cards.3 is undefined" });
   assert.match((inspectPath({ game: () => state }, "nope") as { error: string }).error, /roots are game/);
+});
+
+test("table notes report expansion state the view has no field for, and nothing in a plain game", () => {
+  const players = [
+    { index: 0, name: "Ann", boughtProjects: [{ name: "Cathedral" }], activeReminders: [{ cardName: { name: "Bridge" } }] },
+    { index: 1, name: "Bob" }
+  ];
+  const nobody = { index: -1 };
+  const nowhere = { pileName: { name: "Back" } };
+  const village = { pileName: { name: "Village" }, attachedTrait: { name: "Cheap" } };
+  const plain = {
+    players: [{ index: 0, name: "Ann" }, players[1]!],
+    zones: [nowhere, { pileName: { name: "Village" }, attachedTrait: { name: "Back" } }],
+    activeTurn: { ownerId: 0, controllerId: 0, turnType: 0 },
+    tokens: [],
+    counters: [
+      { counterName: { name: "Coffers" }, owner: players[0]!, value: 2, associatedPile: nowhere, associatedCard: null },
+      { counterName: { name: "Embargo Tokens" }, owner: nobody, value: 0, associatedPile: village, associatedCard: null }
+    ]
+  };
+  const turnKinds = ["REGULAR", "BETWEEN", "POSSESSION", "MISSION", "OUTPOST"];
+  assert.deepEqual(tableNotes(plain, turnKinds), []);
+
+  const busy = {
+    ...plain,
+    players,
+    zones: [nowhere, village],
+    activeTurn: { ownerId: 0, controllerId: 1, turnType: 2 },
+    tokens: [{ tokenName: { name: "+Action token" }, owner: players[1]!, zone: village, isFlipped: false }],
+    counters: [
+      ...plain.counters,
+      { counterName: { name: "Embargo Tokens" }, owner: nobody, value: 1, associatedPile: village, associatedCard: null },
+      { counterName: { name: "VP Tokens" }, owner: nobody, value: 3, associatedPile: nowhere, associatedCard: { cardName: { name: "Temple" } } }
+    ]
+  };
+  assert.deepEqual(tableNotes(busy, turnKinds), [
+    "This is an extra turn (possession).",
+    "Bob controls this turn.",
+    "Bob's +Action token is on Village.",
+    "Embargo Tokens 1 on Village.",
+    "VP Tokens 3 on Temple.",
+    "Ann has bought Cathedral.",
+    "Ann has reminders up for Bridge.",
+    "Cheap is attached to Village."
+  ]);
 });
