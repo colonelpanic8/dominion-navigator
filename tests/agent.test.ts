@@ -131,7 +131,7 @@ test("the groups of an OR question are shown as alternatives", () => {
   const decision = buildDecision(root, "d70");
   assert.deepEqual(decision.alternatives, [[0], [1]]);
   const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision });
-  assert.match(text, /^DECISION d70: Gain a Silver\n {2}answer ONE of these groups, not several\n {2}\[gain\]/m);
+  assert.match(text, /^DECISION d70: Gain a Silver\n {2}answer from ONE of these, never mixing them: \[gain\] \| \[choose-mode\]\n {2}\[gain\]/m);
   assert.match(errorOf(resolveAnswer(root, "d70", [0, 2])), /different groups/);
 
   const buyPhase = view(fixture("GAME_BUY_PHASE", ["buy", "play", "button"])).decision!;
@@ -141,7 +141,37 @@ test("the groups of an OR question are shown as alternatives", () => {
   const nested: RawQuestion = { ...root, subquestions: [{ ...andRoot, path: [0], subquestions: root.subquestions!.map((sub, index) => ({ ...sub, path: [0, index] })) }, { ...root.subquestions![1]!, path: [1] }] };
   const together = buildDecision(nested, "d72");
   assert.deepEqual(together.alternatives, [[0, 1], [2]]);
-  assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: together }), /answer ONE of these groups, not several; \[gain\] and \[choose-mode\] may be answered together$/m);
+  assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: together }), /never mixing them: \[gain\]\+\[choose-mode\] \| \[choose-mode\]$/m);
+});
+
+test("alternatives follow a nested OR, so a buy is never offered alongside treasures", () => {
+  // The shape of a live buy phase with an Ally whose ability may be resolved instead.
+  const choice = (type: string, path: number[]): RawQuestion => ({
+    questionClass: "choice",
+    type,
+    questionId: "GAME_BUY_PHASE",
+    prompt: type,
+    path,
+    min: 0,
+    max: 1,
+    elements: [{ kind: "card", label: "Copper", card: "Copper" }]
+  });
+  const complex = (type: string, path: number[], subquestions: RawQuestion[]): RawQuestion => ({
+    questionClass: "complex",
+    type,
+    questionId: "GAME_BUY_PHASE",
+    prompt: "You may buy cards",
+    path,
+    subquestions
+  });
+  const root = complex("COMPLEX_OR", [], [
+    complex("COMPLEX_OR", [0], [choice("BUY", [0, 0]), complex("COMPLEX_AND", [0, 1], [choice("PLAY", [0, 1, 0]), choice("WAY", [0, 1, 1])]), choice("BUTTON", [0, 2])]),
+    complex("COMPLEX_AND", [1], [choice("RESOLVE_ABILITY", [1, 0]), choice("WAY", [1, 1])])
+  ]);
+  const decision = buildDecision(root, "d2");
+  assert.deepEqual(decision.alternatives, [[0], [1, 2], [3], [4, 5]]);
+  assert.match(errorOf(resolveAnswer(root, "d2", [0, 1])), /different groups/);
+  assert.equal(resolveAnswer(root, "d2", [1, 2]).ok, true);
 });
 
 test("a split pile names the cards under its top card", () => {

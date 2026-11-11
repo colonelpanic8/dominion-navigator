@@ -121,6 +121,27 @@ function selectionBounds(question: RawQuestion): { min: number; max: number } {
   return { min: Math.min(question.min ?? 0, count), max: Math.min(question.max ?? 1, count) };
 }
 
+const MAX_ANSWER_SETS = 24;
+
+/**
+ * The largest sets of groups one answer may combine: an OR takes one branch, an
+ * AND may combine its children, at any depth. This matches what `resolveAnswer`
+ * accepts.
+ */
+function answerSets(node: RawQuestion, groupAt: Map<string, number>): number[][] {
+  if (node.questionClass !== "complex") {
+    const group = groupAt.get(node.path.join("."));
+    return group === undefined ? [] : [[group]];
+  }
+  const children = (node.subquestions ?? []).map((child) => answerSets(child, groupAt)).filter((sets) => sets.length > 0);
+  if (node.type !== "COMPLEX_AND") return children.flat();
+  let combined: number[][] = [[]];
+  for (const sets of children) {
+    combined = combined.flatMap((left) => sets.map((right) => [...left, ...right])).slice(0, MAX_ANSWER_SETS);
+  }
+  return combined.filter((set) => set.length > 0);
+}
+
 type Indexed = {
   decision: Decision;
   leaves: Leaf[];
@@ -152,13 +173,8 @@ function index(root: RawQuestion, id: string): Indexed {
   }
 
   const single = groups.length === 1 ? groups[0] : undefined;
-  const branches = new Map<number, number[]>();
-  if (root.type === "COMPLEX_OR") {
-    for (const { question, group } of leaves) {
-      const branch = question.path[root.path.length]!;
-      branches.set(branch, [...(branches.get(branch) ?? []), group.group]);
-    }
-  }
+  const groupAt = new Map(leaves.map(({ question, group }) => [question.path.join("."), group.group]));
+  const sets = answerSets(root, groupAt);
   return {
     decision: {
       id,
@@ -167,7 +183,7 @@ function index(root: RawQuestion, id: string): Indexed {
       kind: single ? single.kind : kebab(root.type),
       ...(single ? { min: single.min, max: single.max } : {}),
       groups,
-      ...(branches.size > 1 ? { alternatives: [...branches.values()] } : {}),
+      ...(sets.length > 1 ? { alternatives: sets } : {}),
       options
     },
     leaves,
