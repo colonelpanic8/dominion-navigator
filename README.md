@@ -205,6 +205,6 @@ That file contains the extracted Dominion client card-shaped objects plus a `tra
 
 Related scripts (the extract and kingdom scripts drive a Chrome started by `npm run launch:chrome`):
 
-- `node scripts/extract-card-texts-from-cdp.mjs`: logs in (credentials from the `pass` entry in `DOMINION_PASS_ENTRY`) and re-extracts the card-shaped objects.
+- `node scripts/extract-card-texts-from-cdp.mjs`: logs in (credentials from the `pass` entry in `DOMINION_PASS_ENTRY`, default `dominion.games/EyeVanMaliceSon`) and re-extracts the card-shaped objects.
 - `node scripts/audit-card-tracker-candidates.mjs`: regenerates `trackerAudit` in place (no browser needed).
 - `node scripts/set-table-kingdom.mjs [--no-bot] <card>...`: fills the open table editor with a fixed kingdom and, by default, adds a bot.
