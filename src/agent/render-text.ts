@@ -41,7 +41,11 @@ function decision(value: Decision): string[] {
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
-    const bounds = group.min === group.max ? `choose ${group.min}` : `choose ${group.min}-${group.max}`;
+    const bounds = group.order
+      ? `choose all ${group.max} in order, bottom card first and top card last`
+      : group.min === group.max
+        ? `choose ${group.min}`
+        : `choose ${group.min}-${group.max}`;
     if (multipleGroups) lines.push(`  [${group.kind}] ${group.prompt} (${bounds})`);
     else lines.push(`  ${bounds}`);
     for (const option of value.options.filter((item) => item.group === group.group)) {

@@ -48,16 +48,15 @@ function leafOptions(question: RawQuestion): Array<{ option: Omit<DecisionOption
   const options: Array<{ option: Omit<DecisionOption, "index" | "group">; target: OptionTarget }> = [];
   switch (question.questionClass) {
     case "choice": {
-      if (question.type === "ORDER_CARDS") {
-        options.push({ option: { kind: "keep-order", label: "Keep the current order" }, target: { action: "keep-order" } });
-        break;
-      }
       (question.elements ?? []).forEach((element, index) => {
         options.push({
           option: { kind: element.kind, label: element.label, ...(element.card ? { card: element.card } : {}) },
           target: { action: "select", element: index }
         });
       });
+      if (question.type === "ORDER_CARDS") {
+        options.push({ option: { kind: "keep-order", label: "Keep the current order" }, target: { action: "keep-order" } });
+      }
       break;
     }
     case "number": {
@@ -86,11 +85,11 @@ function leafOptions(question: RawQuestion): Array<{ option: Omit<DecisionOption
 }
 
 function selectionBounds(question: RawQuestion): { min: number; max: number } {
-  if (question.questionClass === "choice" && question.type !== "ORDER_CARDS") {
-    const count = question.elements?.length ?? 0;
-    return { min: Math.min(question.min ?? 0, count), max: Math.min(question.max ?? 1, count) };
-  }
-  return { min: 1, max: 1 };
+  if (question.questionClass !== "choice") return { min: 1, max: 1 };
+  const count = question.elements?.length ?? 0;
+  // An order names every card once; the client reads the answer as bottom to top.
+  if (question.type === "ORDER_CARDS") return { min: count, max: count };
+  return { min: Math.min(question.min ?? 0, count), max: Math.min(question.max ?? 1, count) };
 }
 
 type Indexed = {
@@ -112,7 +111,8 @@ function index(root: RawQuestion, id: string): Indexed {
       group: groups.length,
       kind: kebab(question.type),
       prompt: question.prompt,
-      ...selectionBounds(question)
+      ...selectionBounds(question),
+      ...(question.type === "ORDER_CARDS" ? { order: "bottom-to-top" as const } : {})
     };
     groups.push(group);
     leaves.push({ question, group });

@@ -82,6 +82,8 @@ export type DecisionGroup = {
   prompt: string;
   min: number;
   max: number;
+  /** Set when the order of the chosen options is the answer: the first goes on the bottom, the last on top. */
+  order?: "bottom-to-top";
 };
 
 export type Decision = {
