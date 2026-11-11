@@ -136,7 +136,9 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     if (wait.status === "game-over") lines.push("The game is over. Call new_game to play again.");
     if (wait.status === "spectating") lines.push("This account is spectating this game, so there is nothing to answer.");
     if (wait.status === "decision" && !autoAnswer) lines.push(HUMAN_OPPONENTS);
-    if (wait.knowledgeLag > 0) lines.push(`Card tracking is ${wait.knowledgeLag} event(s) behind this view.`);
+    if (wait.knowledgeLag > 0 && wait.status === "decision") {
+      lines.push(`Card tracking had not caught up with ${wait.knowledgeLag} card move(s) when this view was taken, so card locations may be out of date.`);
+    }
     return lines.join("\n");
   };
 

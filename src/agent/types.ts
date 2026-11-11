@@ -31,6 +31,8 @@ export type TableState = {
     number?: number;
     activePlayerIndex?: number;
   };
+  /** The Treasures in this seat's hand, not yet played. Undefined when spectating. */
+  handTreasure?: HandTreasure;
   counters: Array<{ playerIndex: number; name: string; value: number }>;
   supply: SupplyPileView[];
   nonSupply: PileView[];
@@ -134,6 +136,14 @@ export type PlayerView = {
   counters: Record<string, number>;
 };
 
+export type HandTreasure = {
+  /** What the fixed-value Treasures in hand make together. */
+  coins: number;
+  potions: number;
+  /** Treasures whose value depends on the game (Bank, Fool's Gold, ...), by name. */
+  variable: string[];
+};
+
 export type TurnView = {
   number?: number;
   activePlayer?: string;
@@ -145,6 +155,8 @@ export type TurnView = {
   coins?: number;
   potions?: number;
   debt?: number;
+  /** On your turn: what the Treasures still in your hand would add. */
+  treasureInHand?: HandTreasure;
 };
 
 export type GameResult = {

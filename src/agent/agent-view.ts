@@ -112,17 +112,21 @@ function turnView(table: TableState, decision: Decision | null): TurnView {
   const active = table.players.find((player) => player.index === table.turn.activePlayerIndex);
   const counters = active ? playerCounters(table, active.index) : {};
   const counter = (name: string): Record<string, number> => (counters[name] !== undefined ? { [name.toLowerCase()]: counters[name]! } : {});
+  const yourTurn = table.playerMeIndex !== undefined && table.turn.activePlayerIndex === table.playerMeIndex;
   return {
     ...(table.turn.number !== undefined ? { number: table.turn.number } : {}),
     ...(active ? { activePlayer: active.name } : {}),
-    yourTurn: table.playerMeIndex !== undefined && table.turn.activePlayerIndex === table.playerMeIndex,
+    yourTurn,
     phase: derivePhase(decision),
     phaseSource: "derived-from-decision",
     ...counter("Actions"),
     ...counter("Buys"),
     ...counter("Coins"),
     ...counter("Potions"),
-    ...counter("Debt")
+    ...counter("Debt"),
+    ...(yourTurn && table.handTreasure && (table.handTreasure.coins || table.handTreasure.potions || table.handTreasure.variable.length)
+      ? { treasureInHand: table.handTreasure }
+      : {})
   };
 }
 

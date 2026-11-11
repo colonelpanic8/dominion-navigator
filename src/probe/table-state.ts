@@ -1,5 +1,5 @@
 import type { CardCounter } from "../knowledge";
-import { Cost, PileView, SupplyPileView, TableState } from "../agent/types";
+import { Cost, HandTreasure, PileView, SupplyPileView, TableState } from "../agent/types";
 import { tableNotes } from "../agent/table-notes";
 import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 
@@ -63,6 +63,29 @@ function gameNumber(game: RuntimeGame): string | undefined {
   return undefined;
 }
 
+function handTreasure(game: RuntimeGame, zones: RuntimeZone[]): HandTreasure | undefined {
+  const me = game.playerModel?.playerMe;
+  if (me?.index === undefined) return undefined;
+  const result: HandTreasure = { coins: 0, potions: 0, variable: [] };
+  for (const zone of zones) {
+    if (!isRuntimeInstance(zone, "HandZone") || zone.owner?.index !== me.index) continue;
+    for (const stack of zone.cardStacks ?? []) {
+      for (const card of stack?.cards ?? []) {
+        const name = card.cardName;
+        if (!name?.name || !(name.types ?? []).some((type) => type.name === "Treasure")) continue;
+        const made = name.coinProduction;
+        if (made && !made.isSpecial && typeof made.coin === "number") {
+          result.coins += made.coin;
+          result.potions += typeof made.potion === "number" ? made.potion : 0;
+        } else {
+          result.variable.push(name.name);
+        }
+      }
+    }
+  }
+  return result;
+}
+
 export function summarizeTable(game: RuntimeGame): TableState {
   const zones = (game.state?.zones ?? []).filter((zone): zone is RuntimeZone => Boolean(zone));
   const neutral = zones.filter((zone) => (zone.owner?.index ?? -1) < 0);
@@ -87,6 +110,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
 
   const number = gameNumber(game);
   const notes = tableNotes(game.state, Object.keys(dominion.ExtraTurnTypes ?? {}));
+  const treasure = handTreasure(game, zones);
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
     .map((player) => ({ index: player.index!, name: player.name ?? `Player ${player.index}` }));
@@ -102,6 +126,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
       ...(turn?.turnNumber !== undefined ? { number: turn.turnNumber } : {}),
       ...(turn?.ownerId !== undefined ? { activePlayerIndex: turn.ownerId } : {})
     },
+    ...(treasure ? { handTreasure: treasure } : {}),
     counters: (game.state?.counters ?? [])
       .filter((counter) => counter.owner?.index !== undefined && counter.counterName?.name && counter.value !== undefined)
       .map((counter) => ({ playerIndex: counter.owner!.index!, name: counter.counterName!.name!, value: counter.value! })),

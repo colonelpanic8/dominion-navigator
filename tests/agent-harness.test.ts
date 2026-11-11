@@ -210,3 +210,11 @@ test("inspect stops expanding a widely shared graph", () => {
   assert.ok(dump.length < 200_000, `dump is ${dump.length} characters`);
   assert.match(dump, /"key199":/);
 });
+
+test("the status says what the hand's treasures make and the score is always printed", () => {
+  const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
+  const text = renderAgentViewText(view);
+  assert.match(text, /^GAME .*, unplayed treasures in hand make \$5 plus Bank \(varies\)$/m);
+  assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
+  assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
+});

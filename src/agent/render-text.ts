@@ -1,5 +1,5 @@
 import type { CardCounter } from "../knowledge";
-import { AgentView, Cost, Decision, PlayerView, ZoneView } from "./types";
+import { AgentView, Cost, Decision, HandTreasure, PlayerView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
   const entries = Object.entries(counter);
@@ -55,6 +55,24 @@ function decision(value: Decision): string[] {
   return lines;
 }
 
+function treasureInHand(value: HandTreasure): string {
+  const fixed = [value.coins ? `$${value.coins}` : "", value.potions ? `${value.potions}P` : ""].filter(Boolean).join("+");
+  const counted: CardCounter = {};
+  for (const name of value.variable) counted[name] = (counted[name] ?? 0) + 1;
+  const variable = value.variable.length ? `${fixed ? " plus " : ""}${cards(counted)} (varies)` : "";
+  return `unplayed treasures in hand make ${fixed}${variable}`;
+}
+
+/** Scores and the piles that end the game, which a delta would otherwise only print when they change. */
+function score(view: AgentView): string {
+  const players = [view.you, ...view.opponents].filter((item): item is PlayerView => Boolean(item));
+  const points = players.map((item) => `${item === view.you ? "you" : item.name} ${item.points ?? "?"}`).join(", ");
+  const enders = view.supply.filter((pile) => pile.card === "Province" || pile.card === "Colony").map((pile) => `${pile.card} ${pile.count} left`);
+  const empty = view.supply.filter((pile) => pile.count === 0).map((pile) => pile.card);
+  const piles = [...enders, empty.length ? `empty piles: ${empty.join(", ")}` : ""].filter(Boolean).join(", ");
+  return `SCORE ${points}${piles ? `; ${piles}` : ""}`;
+}
+
 /**
  * A view as independent blocks. A lines block is reprinted whole when any of it
  * changes; a piles block can report single piles because each stands alone.
@@ -70,10 +88,12 @@ function blocks(view: AgentView): Block[] {
     turn.activePlayer ? `${turn.yourTurn ? "your turn" : `${turn.activePlayer}'s turn`}` : "",
     turn.phase ? `${turn.phase} phase` : "",
     ...(["actions", "buys", "coins"] as const).map((key) => (turn[key] !== undefined ? `${key} ${turn[key]}` : "")),
-    ...(["potions", "debt"] as const).map((key) => (turn[key] ? `${key} ${turn[key]}` : ""))
+    ...(["potions", "debt"] as const).map((key) => (turn[key] ? `${key} ${turn[key]}` : "")),
+    turn.treasureInHand ? treasureInHand(turn.treasureInHand) : ""
   ].filter(Boolean);
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];
+  if (view.game.running) game.push(score(view));
   if (view.game.result) {
     game.push(`RESULT ${view.game.result.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`);
   }

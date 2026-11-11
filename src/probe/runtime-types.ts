@@ -14,6 +14,8 @@ export type AngularLike = {
 export type RuntimeCardName = {
   name?: string;
   types?: Array<{ name?: string }>;
+  /** What a Treasure makes when played, for those with a fixed value. */
+  coinProduction?: { coin?: unknown; potion?: unknown; isSpecial?: boolean };
   hasHeirloom?: () => boolean;
 };
 
