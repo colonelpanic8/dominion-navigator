@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
-import { buildCardGlossary, normalizeCardText } from "../src/agent/glossary";
+import { buildCardGlossary, normalizeCardText, viewCardNames } from "../src/agent/glossary";
+import { splitPiles } from "../src/agent/split-piles";
 import { renderAgentViewText } from "../src/agent/render-text";
 import { completedTurns } from "../src/agent/turn-summary";
 import { RawQuestion, ZoneView } from "../src/agent/types";
 import { neutralZoneKind } from "../src/probe/zone-kind";
+import cardData from "../data/dominion-card-shaped-objects.json" with { type: "json" };
 import type { CardCounter, KnowledgeSummary } from "../src/knowledge";
 import { fixture, fixtures, optionIndex, view } from "./live-fixtures";
 
@@ -19,13 +21,14 @@ test("buy-phase answers stay within one branch of the client's OR question", () 
   const live = view(item);
   const root = item.rawQuestions[0]!;
   const buySilver = optionIndex(live, "buy", "Silver");
+  const silverElement = root.subquestions![0]!.elements!.findIndex((element) => element.card === "Silver");
   const endBuys = optionIndex(live, "buy", "End Buys");
   const autoplay = optionIndex(live, "button", "Autoplay Treasures");
   const treasure = live.decision!.options.find((option) => live.decision!.groups[option.group]!.kind === "play")!.index;
 
   assert.deepEqual(resolveAnswer(root, item.decisionId, [buySilver]), {
     ok: true,
-    plan: { leaves: [{ path: [0], action: "select", elements: [live.decision!.options[buySilver]!.index] }] }
+    plan: { leaves: [{ path: [0], action: "select", elements: [silverElement] }] }
   });
   assert.deepEqual(resolveAnswer(root, item.decisionId, [endBuys]), { ok: true, plan: { leaves: [{ path: [0], action: "decline" }] } });
   assert.deepEqual(resolveAnswer(root, item.decisionId, [autoplay]), { ok: true, plan: { leaves: [{ path: [2], action: "select", elements: [0] }] } });
@@ -76,6 +79,113 @@ test("an ordering prompt takes every card once, bottom first, or keeps the clien
   assert.match(errorOf(resolveAnswer(root, "d24", [1])), /exactly 2/);
   assert.match(errorOf(resolveAnswer(root, "d24", [0, 2])), /on its own/);
   assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision }), /choose all 2 in order, bottom card first and top card last/);
+});
+
+test("hand cards list by cost, then name, whatever order the client sends them in", () => {
+  const card = (name: string, coins: number) => ({ kind: "card" as const, label: name, card: name, cost: { coins } });
+  const hand = [card("Gold", 6), card("Curse", 0), card("Silver", 3), card("Copper", 0)];
+  const prompt = (elements: NonNullable<RawQuestion["elements"]>): RawQuestion => ({
+    questionClass: "choice",
+    type: "TRASH",
+    questionId: "CRUCIBLE",
+    prompt: "Trash a card",
+    path: [],
+    min: 1,
+    max: 1,
+    declineLabel: "Trash nothing",
+    elements
+  });
+  const shuffled = [hand[2]!, hand[0]!, hand[3]!, hand[1]!];
+  for (const elements of [hand, shuffled]) {
+    const root = prompt(elements);
+    const decision = buildDecision(root, "d60");
+    assert.deepEqual(
+      decision.options.map((option) => option.label),
+      ["Copper", "Curse", "Silver", "Gold", "Trash nothing"]
+    );
+    for (const option of decision.options.slice(0, 4)) {
+      const plan = resolveAnswer(root, "d60", [option.index]);
+      assert.ok(plan.ok);
+      const [leaf] = plan.plan.leaves;
+      assert.equal(leaf?.action === "select" && elements[leaf.elements[0]!]!.card, option.card);
+    }
+  }
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_TRASH")), decision: buildDecision(prompt(shuffled), "d60") });
+  assert.match(text, /^ {4}2: Silver \$3$/m);
+  assert.match(text, /^ {4}4: Trash nothing \(decline\)$/m);
+});
+
+test("the groups of an OR question are shown as alternatives", () => {
+  // The shape of a live Wayfarer gain: either group answers it.
+  const root: RawQuestion = {
+    questionClass: "complex",
+    type: "COMPLEX_OR",
+    questionId: "WAYFARER",
+    prompt: "Gain a Silver",
+    path: [],
+    subquestions: [
+      { questionClass: "choice", type: "GAIN", questionId: "WAYFARER", prompt: "Gain a Silver", path: [0], min: 1, max: 1, declineLabel: "Don't Gain", elements: [{ kind: "card", label: "Silver", card: "Silver" }] },
+      { questionClass: "choice", type: "CHOOSE_MODE", questionId: "WAYFARER", prompt: "Choose", path: [1], min: 1, max: 1, elements: [{ kind: "mode", label: "Gain Silver" }] }
+    ]
+  };
+  const decision = buildDecision(root, "d70");
+  assert.deepEqual(decision.alternatives, [[0], [1]]);
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision });
+  assert.match(text, /^DECISION d70: Gain a Silver\n {2}answer from ONE of these, never mixing them: \[gain\] \| \[choose-mode\]\n {2}\[gain\]/m);
+  assert.match(errorOf(resolveAnswer(root, "d70", [0, 2])), /different groups/);
+
+  const buyPhase = view(fixture("GAME_BUY_PHASE", ["buy", "play", "button"])).decision!;
+  assert.deepEqual(buyPhase.alternatives, [[0], [1], [2]]);
+  const andRoot: RawQuestion = { ...root, type: "COMPLEX_AND" };
+  assert.equal(buildDecision(andRoot, "d71").alternatives, undefined);
+  const nested: RawQuestion = { ...root, subquestions: [{ ...andRoot, path: [0], subquestions: root.subquestions!.map((sub, index) => ({ ...sub, path: [0, index] })) }, { ...root.subquestions![1]!, path: [1] }] };
+  const together = buildDecision(nested, "d72");
+  assert.deepEqual(together.alternatives, [[0, 1], [2]]);
+  assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: together }), /never mixing them: \[gain\]\+\[choose-mode\] \| \[choose-mode\]$/m);
+});
+
+test("alternatives follow a nested OR, so a buy is never offered alongside treasures", () => {
+  // The shape of a live buy phase with an Ally whose ability may be resolved instead.
+  const choice = (type: string, path: number[]): RawQuestion => ({
+    questionClass: "choice",
+    type,
+    questionId: "GAME_BUY_PHASE",
+    prompt: type,
+    path,
+    min: 0,
+    max: 1,
+    elements: [{ kind: "card", label: "Copper", card: "Copper" }]
+  });
+  const complex = (type: string, path: number[], subquestions: RawQuestion[]): RawQuestion => ({
+    questionClass: "complex",
+    type,
+    questionId: "GAME_BUY_PHASE",
+    prompt: "You may buy cards",
+    path,
+    subquestions
+  });
+  const root = complex("COMPLEX_OR", [], [
+    complex("COMPLEX_OR", [0], [choice("BUY", [0, 0]), complex("COMPLEX_AND", [0, 1], [choice("PLAY", [0, 1, 0]), choice("WAY", [0, 1, 1])]), choice("BUTTON", [0, 2])]),
+    complex("COMPLEX_AND", [1], [choice("RESOLVE_ABILITY", [1, 0]), choice("WAY", [1, 1])])
+  ]);
+  const decision = buildDecision(root, "d2");
+  assert.deepEqual(decision.alternatives, [[0], [1, 2], [3], [4, 5]]);
+  assert.match(errorOf(resolveAnswer(root, "d2", [0, 1])), /different groups/);
+  assert.equal(resolveAnswer(root, "d2", [1, 2]).ok, true);
+});
+
+test("a split pile names the cards under its top card", () => {
+  const piles = splitPiles(cardData.cardShapedObjects);
+  assert.deepEqual(piles.get("Tent"), ["Garrison", "Hill Fort", "Stronghold", "Tent"]);
+  assert.deepEqual(piles.get("Rocks"), ["Catapult", "Rocks"]);
+  assert.equal(piles.get("Sir Martin")?.length, 10);
+  assert.equal(piles.get("Village"), undefined);
+
+  const live = view(fixture("REMODEL_GAIN"));
+  const forts = { card: "Tent", count: 16, cost: { coins: 3 }, types: ["Action", "Fort"], kingdom: true, others: ["Garrison", "Hill Fort", "Stronghold"] };
+  const withForts = { ...live, supply: [...live.supply, forts] };
+  assert.match(renderAgentViewText(withForts), /Tent \$3 x16 \(pile also holds Garrison, Hill Fort, Stronghold\)/);
+  for (const card of ["Tent", "Garrison", "Hill Fort", "Stronghold"]) assert.ok(viewCardNames(withForts).has(card), card);
 });
 
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {

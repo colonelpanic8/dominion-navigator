@@ -44,10 +44,10 @@ export function buildCardGlossary(cardData: CardDataEntry[], names: Iterable<str
   return glossary;
 }
 
-/** Every card a view names: piles, landscapes, known owned cards and decision options. */
+/** Every card a view names: piles and the other cards of split piles, landscapes, known owned cards and decision options. */
 export function viewCardNames(view: AgentView): Set<string> {
   const names = new Set<string>();
-  for (const pile of [...view.supply, ...view.nonSupply, ...view.landscapes]) names.add(pile.card);
+  for (const pile of [...view.supply, ...view.nonSupply, ...view.landscapes]) for (const card of [pile.card, ...(pile.others ?? [])]) names.add(card);
   for (const player of [view.you, ...view.opponents]) {
     if (!player) continue;
     for (const card of Object.keys(player.owned.known)) names.add(card);

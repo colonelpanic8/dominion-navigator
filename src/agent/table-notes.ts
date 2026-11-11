@@ -53,7 +53,7 @@ export function tableNotes(state: RuntimeState | undefined, turnKinds: string[])
     const projects = (player.boughtProjects ?? []).map(cardLabel).filter(Boolean);
     if (projects.length) notes.push(`${name} has bought ${projects.join(", ")}.`);
     const reminders = (player.activeReminders ?? []).map((reminder) => cardLabel(reminder.cardName)).filter(Boolean);
-    if (reminders.length) notes.push(`${name} has reminders up for ${reminders.join(", ")}.`);
+    if (reminders.length) notes.push(`${name} has reminders for ${reminders.join(", ")} (a reminder is a card whose effect is still pending for that player).`);
   }
 
   for (const zone of state?.zones ?? []) {

@@ -85,6 +85,7 @@ test("step answers forced decisions itself and then reports only what changed", 
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
   const second = await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
   assert.deepEqual(answers.at(-1), [firstBuy.decision!.id, [buy]]);
+  assert.ok(second.startsWith(`CHOSE ${firstBuy.decision!.id}: [buy] Silver\n`), second.split("\n")[0]);
   assert.match(second, new RegExp(`^DECISION ${secondBuy.decision!.id}: `, "m"));
   assert.doesNotMatch(second, /^CARDS$/m);
   assert.ok(second.length < renderAgentViewText(secondBuy).length);
@@ -181,7 +182,7 @@ test("table notes report expansion state the view has no field for, and nothing 
     "Embargo Tokens 1 on Village.",
     "VP Tokens 3 on Temple.",
     "Ann has bought Cathedral.",
-    "Ann has reminders up for Bridge.",
+    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player).",
     "Cheap is attached to Village."
   ]);
 });
@@ -213,7 +214,7 @@ test("a view is only a delta base once it was delivered, and log lines are shown
 test("a delta says when the notes no longer apply", () => {
   const noted: AgentView = { ...firstBuy, notes: ["This is an extra turn (outpost)."] };
   assert.match(renderAgentViewDelta(firstBuy, noted), /^ALSO\n {2}This is an extra turn \(outpost\)\.$/m);
-  assert.match(renderAgentViewDelta(noted, firstBuy), /^ALSO nothing any more$/m);
+  assert.match(renderAgentViewDelta(noted, firstBuy), /^ALSO \(none of the earlier notes apply any more\)$/m);
 });
 
 test("inspect stops expanding a widely shared graph", () => {
@@ -224,10 +225,10 @@ test("inspect stops expanding a widely shared graph", () => {
   assert.match(dump, /"key199":/);
 });
 
-test("the status says what the hand's treasures make and the score is always printed", () => {
-  const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
+test("the status totals played and unplayed money and the score is always printed", () => {
+  const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, coins: 2, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
   const text = renderAgentViewText(view);
-  assert.match(text, /^GAME .*, unplayed treasures in hand make \$5 plus Bank \(varies\)$/m);
+  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value varies\)$/m);
   assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
@@ -241,4 +242,33 @@ test("a buy with more than one Buy points at Autoplay Treasures", () => {
   assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
   const played = { ...firstBuy.decision!, options: firstBuy.decision!.options.filter((option) => option !== autoplay) };
   assert.doesNotMatch(renderAgentViewText({ ...firstBuy, turn: { ...firstBuy.turn, buys: 2 }, decision: played }), /^ {2}NOTE /m);
+});
+
+test("a buy list labels Events and Projects and warns that buying one ends treasure play", () => {
+  const decision = firstBuy.decision!;
+  const buyGroup = decision.groups.find((group) => group.kind === "buy")!.group;
+  const borrow = { index: decision.options.length, group: buyGroup, kind: "card" as const, label: "Borrow", card: "Borrow" };
+  const view: AgentView = {
+    ...firstBuy,
+    landscapes: [{ card: "Borrow", count: 1, cost: { coins: 0 }, types: ["Event"] }],
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 3, potions: 0, variable: [] } },
+    decision: { ...decision, options: [...decision.options, borrow] }
+  };
+  const text = renderAgentViewText(view);
+  assert.match(text, new RegExp(`^ {4}${borrow.index}: Borrow \\$0 \\[Event\\]$`, "m"));
+  const autoplay = decision.options.find((option) => option.label === "Autoplay Treasures")!;
+  assert.match(text, new RegExp(`^ {2}NOTE buying an Event or Project.*choose ${autoplay.index} \\(Autoplay Treasures\\) first\\.$`, "m"));
+  const { treasureInHand: _treasureInHand, ...played } = view.turn;
+  assert.doesNotMatch(renderAgentViewText({ ...view, turn: played }), /NOTE buying an Event/);
+});
+
+test("a buy decision says that ending buys leads to the Night phase when Night cards are in hand", () => {
+  const view: AgentView = {
+    ...secondBuy,
+    supply: [...secondBuy.supply, { card: "Monastery", count: 10, cost: { coins: 2 }, types: ["Night"], kingdom: true }],
+    you: { ...secondBuy.you!, hand: { ...secondBuy.you!.hand, known: { ...secondBuy.you!.hand.known, Monastery: 1 } } }
+  };
+  const endBuys = secondBuy.decision!.options.find((option) => option.kind === "decline")!;
+  assert.match(renderAgentViewText(view), new RegExp(`^ {2}NOTE Night cards .* To play Monastery, choose ${endBuys.index} \\(End Buys\\) when done buying; .*Night phase\\.$`, "m"));
+  assert.doesNotMatch(renderAgentViewText(secondBuy), /NOTE Night/);
 });

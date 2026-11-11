@@ -13,6 +13,8 @@ export type PileView = {
   count: number;
   cost?: Cost;
   types: string[];
+  /** For a split or mixed pile, its other cards, which may lie under the top one. */
+  others?: string[];
 };
 
 export type SupplyPileView = PileView & {
@@ -70,6 +72,8 @@ export type RawQuestionElement = {
   kind: "card" | "button" | "mode" | "card-name" | "ability" | "zone" | "other";
   label: string;
   card?: string;
+  /** The card's current cost, for card elements. */
+  cost?: Cost;
 };
 
 export type DecisionOptionKind = RawQuestionElement["kind"] | "decline" | "number" | "accept" | "keep-order";
@@ -80,6 +84,8 @@ export type DecisionOption = {
   kind: DecisionOptionKind;
   label: string;
   card?: string;
+  /** The card's current cost, when the client gave one. */
+  cost?: Cost;
   value?: number;
 };
 
@@ -102,6 +108,11 @@ export type Decision = {
   min?: number;
   max?: number;
   groups: DecisionGroup[];
+  /**
+   * Present when the groups are alternatives: an answer takes options from one
+   * entry's groups only. Groups in the same entry may be answered together.
+   */
+  alternatives?: number[][];
   options: DecisionOption[];
 };
 

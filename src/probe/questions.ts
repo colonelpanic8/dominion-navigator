@@ -1,5 +1,6 @@
 import { buildDecision, LeafAnswer, resolveAnswer } from "../agent/decisions";
 import { Decision, RawQuestion, RawQuestionElement } from "../agent/types";
+import { runtimeCost } from "./table-state";
 import { dominion, enumKey, isRuntimeInstance, RuntimeGame, RuntimeQuestion, RuntimeZone } from "./runtime-types";
 
 export type OpenDecision = {
@@ -51,8 +52,12 @@ function parser(game: RuntimeGame) {
   return Parser && game.state ? new Parser(game.state, game.state.players, true) : undefined;
 }
 
-function cardNameOf(game: RuntimeGame, cardId: unknown): string | undefined {
-  return typeof cardId === "number" ? game.state?.cards?.[cardId]?.cardName?.name : undefined;
+function cardElement(game: RuntimeGame, cardId: unknown): RawQuestionElement {
+  const card = typeof cardId === "number" ? game.state?.cards?.[cardId] : undefined;
+  const name = card?.cardName?.name;
+  if (!name) return { kind: "other", label: "Unknown card" };
+  const cost = runtimeCost(card);
+  return { kind: "card", label: name, card: name, ...(cost ? { cost } : {}) };
 }
 
 function zoneLabel(zone: RuntimeZone | undefined): string {
@@ -63,13 +68,9 @@ function zoneLabel(zone: RuntimeZone | undefined): string {
 
 function readElement(game: RuntimeGame, content: unknown, element: unknown): RawQuestionElement {
   const language = dominion.LANGUAGE;
-  if (isRuntimeInstance(content, "QuestionCardElements")) {
-    const card = cardNameOf(game, element);
-    return card ? { kind: "card", label: card, card } : { kind: "other", label: "Unknown card" };
-  }
+  if (isRuntimeInstance(content, "QuestionCardElements")) return cardElement(game, element);
   if (isRuntimeInstance(content, "QuestionBuyableCardElements") || isRuntimeInstance(content, "QuestionCardWithExplanationElements")) {
-    const card = cardNameOf(game, (element as { id?: unknown } | null)?.id);
-    return card ? { kind: "card", label: card, card } : { kind: "other", label: "Unknown card" };
+    return cardElement(game, (element as { id?: unknown } | null)?.id);
   }
   if (isRuntimeInstance(content, "QuestionGameButtonElements")) {
     return { kind: "button", label: language?.getGameButton?.[String(element)] ?? String(element) };

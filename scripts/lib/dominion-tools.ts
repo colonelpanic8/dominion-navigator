@@ -12,8 +12,8 @@ export type DominionToolOptions = {
 export const INSTRUCTIONS = [
   "Plays dominion.games through the Dominion Navigator browser extension, without screenshots.",
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
-  "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown.",
-  "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0.",
+  "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
+  "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0. When a decision says to answer from ONE of a list of group sets, take options from one set only (groups joined by + may be answered together); the other groups need no answer.",
   "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
   "OPPONENT TURNS sums each opponent turn that ended within the LOG: the $ its log lines show it making, and what it bought and gained.",
@@ -72,6 +72,17 @@ function forcedAnswer(decision: Decision): number[] | undefined {
   const [option] = decision.options;
   if (decision.groups.length !== 1 || decision.options.length !== 1 || !group || !option) return undefined;
   return group.min === 1 && group.max === 1 ? [option.index] : undefined;
+}
+
+/** What an answer chose, by label, so a wrong option number shows at once. */
+function describeChoice(decision: Decision, choose: number[]): string {
+  const byGroup = new Map<number, string[]>();
+  for (const index of choose) {
+    const option = decision.options[index];
+    if (option) byGroup.set(option.group, [...(byGroup.get(option.group) ?? []), option.label]);
+  }
+  const parts = [...byGroup].map(([group, labels]) => `[${decision.groups[group]?.kind ?? "?"}] ${labels.join(", ")}`);
+  return `CHOSE ${decision.id}: ${parts.join("; ") || "nothing"}`;
 }
 
 const GAME_OVER = "The game is over. Call new_game to play again.";
@@ -185,12 +196,14 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         const choose = list(args, "choose", "number");
         const timeoutMs = waitMs(args);
         if (!(await mayActInGame())) throw new Error(HUMAN_OPPONENTS);
+        const open = shown?.view.decision?.id === decision ? shown.view.decision : (await client.call("getAgentView", [])).decision;
         const result = await client.call("answer", [decision, choose]);
         if (!result.ok) {
           const current = await present(await client.call("getAgentView", []), "delta", signal);
           throw new Error([`Answer rejected: ${result.error}`, ...current].join("\n"));
         }
-        return settle(timeoutMs, "delta", true, signal);
+        const next = await settle(timeoutMs, "delta", true, signal);
+        return open?.id === decision ? `${describeChoice(open, choose)}\n${next}` : next;
       }
     },
     {
