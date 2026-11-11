@@ -155,7 +155,9 @@ node --import tsx scripts/mcp-server.ts
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
 
-State the view has no field for (tokens, counters on piles or cards, bought projects, traits, reminders, extra turns) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
+An extra turn is marked on the status line, as in `turn 12 (extra turn: seize the day)`, and a pile's Trait on the pile and on options for its cards, as in `Old Witch $5 [trait: Reckless]`. A finished game's `RESULT` gives each player's turns and, when the supply or a resignation shows it, how the game ended. In the buy phase, a `NOTE` names the unplayed treasures the buy list does not count (a value that is not fixed, such as Bank's) or that buying would never play (one that does more than make money), with the options that play them.
+
+State the view has no field for (tokens, counters on piles or cards, bought projects, reminders, who controls the turn) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
 
 ## Debugging
 
