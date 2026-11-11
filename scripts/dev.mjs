@@ -7,7 +7,8 @@ import * as esbuild from "esbuild";
 import { cleanDist, copyStatic, esbuildConfigs, reportDir, root } from "./lib/extension-build.mjs";
 
 const autoReload = !process.argv.includes("--no-auto-reload");
-const reportSinkPort = Number(process.env.DOMINION_NAVIGATOR_REPORT_SINK_PORT ?? "9237");
+// Must match INVARIANT_REPORT_SINK_URL in src/content/invariants.ts and the manifest host_permissions.
+const reportSinkPort = 9237;
 let reloadTimer;
 let reloading = false;
 let pendingReload = false;
