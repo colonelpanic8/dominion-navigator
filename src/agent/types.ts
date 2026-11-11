@@ -13,6 +13,8 @@ export type PileView = {
   count: number;
   cost?: Cost;
   types: string[];
+  /** For a split or mixed pile, its other cards, which may lie under the top one. */
+  others?: string[];
 };
 
 export type SupplyPileView = PileView & {

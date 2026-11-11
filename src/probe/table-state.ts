@@ -1,5 +1,6 @@
 import type { CardCounter } from "../knowledge";
 import { Cost, HandTreasure, PileView, SupplyPileView, TableState } from "../agent/types";
+import { splitPiles } from "../agent/split-piles";
 import { tableNotes } from "../agent/table-notes";
 import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 import { NeutralZoneKind, neutralZoneKind } from "./zone-kind";
@@ -22,16 +23,31 @@ function topCard(zone: RuntimeZone): RuntimeCard | undefined {
   return (zone.cardStacks ?? []).find((stack) => stack?.topCard?.cardName?.name)?.topCard;
 }
 
+let splitPileCache: Map<string, string[]> | undefined;
+
+function splitPileMembers(): Map<string, string[]> {
+  if (splitPileCache) return splitPileCache;
+  const cards = Object.values(dominion.CardNames ?? {}).map((card) => ({
+    name: card?.name ?? "",
+    types: (card?.types ?? []).map((type) => type.name ?? "")
+  }));
+  const piles = splitPiles(cards);
+  if (cards.length) splitPileCache = piles;
+  return piles;
+}
+
 function pile(zone: RuntimeZone): PileView | undefined {
   const top = topCard(zone);
   const card = top?.cardName?.name ?? zone.pileName?.name;
   if (!card || card === "Back") return undefined;
   const pileCost = runtimeCost(top);
+  const others = splitPileMembers().get(card)?.filter((name) => name !== card);
   return {
     card,
     count: zoneCardCount(zone),
     ...(pileCost ? { cost: pileCost } : {}),
-    types: (top?.cardName?.types ?? []).map((type) => type.name).filter((name): name is string => Boolean(name))
+    types: (top?.cardName?.types ?? []).map((type) => type.name).filter((name): name is string => Boolean(name)),
+    ...(others?.length ? { others } : {})
   };
 }
 

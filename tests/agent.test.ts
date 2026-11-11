@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
-import { buildCardGlossary, normalizeCardText } from "../src/agent/glossary";
+import { buildCardGlossary, normalizeCardText, viewCardNames } from "../src/agent/glossary";
+import { splitPiles } from "../src/agent/split-piles";
 import { renderAgentViewText } from "../src/agent/render-text";
 import { completedTurns } from "../src/agent/turn-summary";
 import { RawQuestion, ZoneView } from "../src/agent/types";
 import { neutralZoneKind } from "../src/probe/zone-kind";
+import cardData from "../data/dominion-card-shaped-objects.json" with { type: "json" };
 import type { CardCounter, KnowledgeSummary } from "../src/knowledge";
 import { fixture, fixtures, optionIndex, view } from "./live-fixtures";
 
@@ -140,6 +142,20 @@ test("the groups of an OR question are shown as alternatives", () => {
   const together = buildDecision(nested, "d72");
   assert.deepEqual(together.alternatives, [[0, 1], [2]]);
   assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: together }), /answer ONE of these groups, not several; \[gain\] and \[choose-mode\] may be answered together$/m);
+});
+
+test("a split pile names the cards under its top card", () => {
+  const piles = splitPiles(cardData.cardShapedObjects);
+  assert.deepEqual(piles.get("Tent"), ["Garrison", "Hill Fort", "Stronghold", "Tent"]);
+  assert.deepEqual(piles.get("Rocks"), ["Catapult", "Rocks"]);
+  assert.equal(piles.get("Sir Martin")?.length, 10);
+  assert.equal(piles.get("Village"), undefined);
+
+  const live = view(fixture("REMODEL_GAIN"));
+  const forts = { card: "Tent", count: 16, cost: { coins: 3 }, types: ["Action", "Fort"], kingdom: true, others: ["Garrison", "Hill Fort", "Stronghold"] };
+  const withForts = { ...live, supply: [...live.supply, forts] };
+  assert.match(renderAgentViewText(withForts), /Tent \$3 x16 \(pile also holds Garrison, Hill Fort, Stronghold\)/);
+  for (const card of ["Tent", "Garrison", "Hill Fort", "Stronghold"]) assert.ok(viewCardNames(withForts).has(card), card);
 });
 
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {

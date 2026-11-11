@@ -1,6 +1,6 @@
 import type { CardCounter } from "../knowledge";
 import { completedTurns, TurnSummary } from "./turn-summary";
-import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, TurnView, ZoneView } from "./types";
+import { AgentView, Cost, Decision, GameResult, HandTreasure, PileView, PlayerView, TurnView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
   const entries = Object.entries(counter);
@@ -41,6 +41,10 @@ function player(label: string, view: PlayerView): string[] {
     .map(([name, value]) => `${name} ${value}`);
   if (counters.length) lines.push(`  ${counters.join(", ")}`);
   return lines;
+}
+
+function others(pile: PileView): string {
+  return pile.others?.length ? ` (pile also holds ${pile.others.join(", ")})` : "";
 }
 
 function pileCosts(view: AgentView): Map<string, Cost> {
@@ -172,12 +176,12 @@ function blocks(view: AgentView): Block[] {
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
   for (const opponent of view.opponents) result.push({ kind: "lines", key: `player:${opponent.index}`, lines: player("OPPONENT", opponent) });
-  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}` })) });
+  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${others(pile)}` })) });
   if (view.landscapes.length) {
     result.push({ kind: "piles", key: "landscapes", label: "LANDSCAPES", piles: view.landscapes.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)}` })) });
   }
   if (view.nonSupply.length) {
-    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}` })) });
+    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${others(pile)}` })) });
   }
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });
