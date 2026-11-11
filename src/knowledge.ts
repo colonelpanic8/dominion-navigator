@@ -173,8 +173,18 @@ function counterFromObject(counter: CardCounter): Map<string, number> {
   return restored;
 }
 
-function zoneKey(zone: Pick<ZoneSummary, "index" | "zoneName">): string {
+export function zoneKey(zone: Pick<ZoneSummary, "index" | "zoneName">): string {
   return `${zone.index}:${zone.zoneName}`;
+}
+
+export function samePlayerIdentity(a: PlayerSummary | undefined, b: PlayerSummary | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.index !== undefined && b.index !== undefined) return a.index === b.index;
+  return a.name !== undefined && a.name === b.name;
+}
+
+export function findPlayerKnowledge(summary: KnowledgeSummary, player: PlayerSummary | undefined): PlayerDeckKnowledge | undefined {
+  return summary.players.find((item) => samePlayerIdentity(player, item.player));
 }
 
 function visibleZoneCards(zone: ZoneDetail): Map<string, number> {
