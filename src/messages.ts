@@ -133,15 +133,3 @@ export type ShowDrawKnowledgeWindowCommand = {
 export type ContentCommand = RequestSnapshotCommand | ShowDrawKnowledgeWindowCommand;
 
 export type NavigatorMessage = ProbeMessage | ContentCommand;
-
-export function postNavigatorMessage(message: NavigatorMessage): void {
-  window.postMessage(message, window.location.origin);
-}
-
-/** Both sides share one window, so each listener also sees messages meant for the other side. */
-export function listenForNavigatorMessages(handler: (message: NavigatorMessage) => void): void {
-  window.addEventListener("message", (event: MessageEvent<NavigatorMessage | undefined>) => {
-    if (event.source !== window || event.data?.source !== MESSAGE_SOURCE) return;
-    handler(event.data);
-  });
-}

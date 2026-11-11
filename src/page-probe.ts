@@ -1,4 +1,5 @@
-import { CardMoveSummary, listenForNavigatorMessages, MESSAGE_SOURCE, NavigatorSnapshot, postNavigatorMessage } from "./messages";
+import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
+import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot } from "./messages";
 import { showDrawKnowledgeWindow } from "./probe/knowledge-modal";
 import { DominionGlobals, getGame, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
 import { GAME_NOT_READY, postStatus } from "./probe/status";

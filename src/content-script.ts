@@ -11,14 +11,8 @@ import {
   storedStateMatchesSnapshot
 } from "./content/persistence";
 import { DeckKnowledgeTracker, KnowledgeSummary } from "./knowledge";
-import {
-  CardMoveSummary,
-  listenForNavigatorMessages,
-  MESSAGE_SOURCE,
-  NavigatorSnapshot,
-  postNavigatorMessage,
-  ZoneDetail
-} from "./messages";
+import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
+import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot, ZoneDetail } from "./messages";
 import { AnonymousTopdeckQueue } from "./topdeck-tracking";
 
 const RECENT_MOVE_LIMIT = 30;
