@@ -98,7 +98,10 @@ export class AgentBridge {
     return {
       players: results
         .map((result) => ({
-          name: (result.playerId !== undefined && this.playerNames.get(result.playerId)) || `Player ${result.playerId ?? "?"}`,
+          name:
+            (result.playerId !== undefined &&
+              (this.playerNames.get(result.playerId) ?? game.state?.players?.find((player) => player.playerId === result.playerId)?.name)) ||
+            `Player ${result.playerId ?? "?"}`,
           rank: result.rank ?? 0,
           points: result.score?.totalPoints ?? 0,
           turns: result.score?.usedTurns ?? 0,
@@ -111,8 +114,9 @@ export class AgentBridge {
   getAgentView(): AgentView {
     const game = getGame();
     if (!game) throw new Error("Dominion game service is not ready yet.");
-    const result = this.gameResult(game);
+    // The table records player names, which the result needs.
     const live = this.liveTable(game);
+    const result = this.gameResult(game);
     const table = live ?? this.lastTable;
     if (!table) throw new Error("Dominion game service is not ready yet.");
     const decision = live && !result && table.playerMeIndex !== undefined ? (openDecisions(game)[0]?.decision ?? null) : null;

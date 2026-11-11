@@ -115,6 +115,7 @@ function turnView(table: TableState, decision: Decision | null): TurnView {
   const yourTurn = table.playerMeIndex !== undefined && table.turn.activePlayerIndex === table.playerMeIndex;
   return {
     ...(table.turn.number !== undefined ? { number: table.turn.number } : {}),
+    ...(table.turn.extra ? { extra: table.turn.extra } : {}),
     ...(active ? { activePlayer: active.name } : {}),
     yourTurn,
     phase: derivePhase(decision),

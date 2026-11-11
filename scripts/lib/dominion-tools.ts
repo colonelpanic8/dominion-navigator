@@ -14,7 +14,7 @@ export const INSTRUCTIONS = [
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0. When a decision says to answer from ONE of a list of group sets, take options from one set only (groups joined by + may be answered together); the other groups need no answer.",
-  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money.",
+  "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money. The buy list does not count treasures whose value is not fixed, such as Bank, and Autoplay may skip them; play those, and treasures that do more than make money, one at a time before buying.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
   "OPPONENT TURNS sums each opponent turn that ended within the LOG: the $ its log lines show it making, and what it bought and gained.",
   "Views never contain hidden information. A zone's `N unknown` counts cards you cannot identify, usually because they moved while face down, such as an opponent's hand being discarded; it is not an error. A line like `hand+discard hold 3 of: Copper, 2 Silver` means those cards are split between those zones in a way you cannot see; with `, 1 of them elsewhere`, one of the listed cards is in some other zone.",
@@ -109,8 +109,13 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
    */
   const present = async (view: AgentView, mode: "full" | "delta", signal: AbortSignal): Promise<string[]> => {
     const number = view.game.number;
-    const previous = mode === "delta" && shown && number !== undefined && shown.view.game.number === number ? shown : undefined;
-    const log = await client.call("getLog", [previous ? { afterIndex: previous.logIndex, limit: MAX_LOG_LINES } : { limit: RECENT_LOG_LINES }]);
+    let previous = mode === "delta" && shown && number !== undefined && shown.view.game.number === number ? shown : undefined;
+    let log = await client.call("getLog", [previous ? { afterIndex: previous.logIndex, limit: MAX_LOG_LINES } : { limit: RECENT_LOG_LINES }]);
+    if (previous && log.lastIndex < previous.logIndex) {
+      // The client rebuilt a shorter log, as after a reload, so a delta against it would skip lines.
+      previous = undefined;
+      log = await client.call("getLog", [{ limit: RECENT_LOG_LINES }]);
+    }
     // A cancelled call's result is never read, so it must not count as shown.
     signal.throwIfAborted();
     const lines = log.entries.map((entry) => entry.text);
@@ -223,7 +228,11 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         type: "object",
         properties: {
           bots: { type: "integer", description: "Number of bot opponents, 1 to 3 (default 1). A chosen kingdom needs 1." },
-          kingdom: { type: "array", items: { type: "string" }, description: "Card and landscape names to require; the rest is filled at random." }
+          kingdom: {
+            type: "array",
+            items: { type: "string" },
+            description: "Card and landscape names to require; the rest is filled at random. A split pile can be named by any of its cards or as a whole, e.g. Tent or Forts."
+          }
         }
       },
       async run(args, signal) {

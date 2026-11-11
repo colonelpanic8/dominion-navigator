@@ -1,7 +1,7 @@
 import type { CardCounter } from "../knowledge";
 import { Cost, HandTreasure, PileView, SupplyPileView, TableState } from "../agent/types";
 import { splitPiles } from "../agent/split-piles";
-import { tableNotes } from "../agent/table-notes";
+import { extraTurnKind, tableNotes } from "../agent/table-notes";
 import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 import { NeutralZoneKind, neutralZoneKind } from "./zone-kind";
 
@@ -42,12 +42,14 @@ function pile(zone: RuntimeZone): PileView | undefined {
   if (!card || card === "Back") return undefined;
   const pileCost = runtimeCost(top);
   const others = splitPileMembers().get(card)?.filter((name) => name !== card);
+  const trait = zone.attachedTrait?.name;
   return {
     card,
     count: zoneCardCount(zone),
     ...(pileCost ? { cost: pileCost } : {}),
     types: (top?.cardName?.types ?? []).map((type) => type.name).filter((name): name is string => Boolean(name)),
-    ...(others?.length ? { others } : {})
+    ...(others?.length ? { others } : {}),
+    ...(trait && trait !== "Back" ? { trait } : {})
   };
 }
 
@@ -115,7 +117,8 @@ export function summarizeTable(game: RuntimeGame): TableState {
       return view ? { ...view, kingdom: isRuntimeInstance(zone, "SupplyCardZone") } : undefined;
     })
     .filter((view): view is SupplyPileView => Boolean(view));
-  const landscapes = ofKind("landscape")
+  const landscapeZones = ofKind("landscape");
+  const landscapes = landscapeZones
     .map(pile)
     .filter((view): view is PileView => Boolean(view));
   const nonSupply = ofKind("non-supply")
@@ -123,13 +126,14 @@ export function summarizeTable(game: RuntimeGame): TableState {
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
   const number = gameNumber(game);
-  const notes = tableNotes(game.state, Object.keys(dominion.ExtraTurnTypes ?? {}));
+  const notes = tableNotes(game.state, new Set(landscapeZones));
   const treasure = handTreasure(game, zones);
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
     .map((player) => ({ index: player.index!, name: player.name ?? `Player ${player.index}` }));
   const playerMeIndex = game.playerModel?.playerMe?.index;
   const turn = game.state?.activeTurn;
+  const extra = extraTurnKind(turn?.turnType, Object.keys(dominion.ExtraTurnTypes ?? {}));
 
   return {
     ...(number ? { gameNumber: number } : {}),
@@ -138,7 +142,8 @@ export function summarizeTable(game: RuntimeGame): TableState {
     ...(playerMeIndex !== undefined ? { playerMeIndex } : {}),
     turn: {
       ...(turn?.turnNumber !== undefined ? { number: turn.turnNumber } : {}),
-      ...(turn?.ownerId !== undefined ? { activePlayerIndex: turn.ownerId } : {})
+      ...(turn?.ownerId !== undefined ? { activePlayerIndex: turn.ownerId } : {}),
+      ...(extra ? { extra } : {})
     },
     ...(treasure ? { handTreasure: treasure } : {}),
     counters: (game.state?.counters ?? [])

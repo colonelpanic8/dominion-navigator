@@ -3,8 +3,8 @@ import test from "node:test";
 import { createDominionTools } from "../scripts/lib/dominion-tools";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
-import { renderAgentViewDelta, renderAgentViewText } from "../src/agent/render-text";
-import { tableNotes } from "../src/agent/table-notes";
+import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../src/agent/render-text";
+import { extraTurnKind, tableNotes } from "../src/agent/table-notes";
 import type { AgentView, SessionState } from "../src/agent/types";
 import { fixtures } from "./live-fixtures";
 
@@ -97,7 +97,7 @@ test("state summarizes a finished game instead of printing its table", async () 
   const { client } = fakeClient([over]);
   const text = await tool(createDominionTools(client, cardData), "state").run({}, live);
   assert.match(text, /^GAME \d+ \(over\)$/m);
-  assert.match(text, /^RESULT 1\. colonelpanic8 30 VP, 2\. Lord Rattington 24 VP$/m);
+  assert.match(text, /^RESULT 1\. colonelpanic8 30 VP in 18 turns, 2\. Lord Rattington 24 VP in 18 turns$/m);
   assert.match(text, /^YOU: colonelpanic8 \(\d+ VP\) owns \d+ cards: /m);
   assert.match(text, /^OPPONENT: Lord Rattington \(\d+ VP\) owns \d+ cards: /m);
   assert.match(text, /Call new_game/);
@@ -149,10 +149,10 @@ test("table notes report expansion state the view has no field for, and nothing 
   ];
   const nobody = { index: -1 };
   const nowhere = { pileName: { name: "Back" } };
-  const village = { pileName: { name: "Village" }, attachedTrait: { name: "Cheap" } };
+  const village = { pileName: { name: "Village" } };
   const plain = {
     players: [{ index: 0, name: "Ann" }, players[1]!],
-    zones: [nowhere, { pileName: { name: "Village" }, attachedTrait: { name: "Back" } }],
+    zones: [nowhere, village],
     activeTurn: { ownerId: 0, controllerId: 0, turnType: 0 },
     tokens: [],
     counters: [
@@ -160,8 +160,7 @@ test("table notes report expansion state the view has no field for, and nothing 
       { counterName: { name: "Embargo Tokens" }, owner: nobody, value: 0, associatedPile: village, associatedCard: null }
     ]
   };
-  const turnKinds = ["REGULAR", "BETWEEN", "POSSESSION", "MISSION", "OUTPOST"];
-  assert.deepEqual(tableNotes(plain, turnKinds), []);
+  assert.deepEqual(tableNotes(plain), []);
 
   const busy = {
     ...plain,
@@ -175,15 +174,36 @@ test("table notes report expansion state the view has no field for, and nothing 
       { counterName: { name: "VP Tokens" }, owner: nobody, value: 3, associatedPile: nowhere, associatedCard: { cardName: { name: "Temple" } } }
     ]
   };
-  assert.deepEqual(tableNotes(busy, turnKinds), [
-    "This is an extra turn (possession).",
+  assert.deepEqual(tableNotes(busy), [
     "Bob controls this turn.",
     "Bob's +Action token is on Village.",
     "Embargo Tokens 1 on Village.",
     "VP Tokens 3 on Temple.",
     "Ann has bought Cathedral.",
-    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player).",
-    "Cheap is attached to Village."
+    "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player)."
+  ]);
+});
+
+test("table notes name landscape piles by their card and say when a token is on no pile", () => {
+  const ann = { index: 0, name: "Ann" };
+  const nobody = { index: -1 };
+  const battlefield = { pileName: { name: "Back" }, cardStacks: [{ topCard: { cardName: { name: "Battlefield" } } }] };
+  const setAside = { zoneName: "SetAsideZone", pileName: { name: "Back" }, cardStacks: [{ topCard: { cardName: { name: "Village" } } }] };
+  const tavern = { zoneName: "TavernZone", owner: ann };
+  const state = {
+    players: [ann],
+    tokens: [
+      { tokenName: { name: "-Card token" }, owner: ann, zone: setAside },
+      { tokenName: { name: "Journey token" }, owner: nobody, zone: setAside, isFlipped: true },
+      { tokenName: { name: "Estate token" }, owner: ann, zone: tavern }
+    ],
+    counters: [{ counterName: { name: "VP Tokens" }, owner: nobody, value: 12, associatedPile: battlefield, associatedCard: null }]
+  };
+  assert.deepEqual(tableNotes(state, new Set([battlefield])), [
+    "Ann has their -Card token, not on a pile.",
+    "Journey token (face down) is not on a pile.",
+    "Ann's Estate token is on their Tavern mat.",
+    "VP Tokens 12 on Battlefield."
   ]);
 });
 
@@ -228,7 +248,7 @@ test("inspect stops expanding a widely shared graph", () => {
 test("the status totals played and unplayed money and the score is always printed", () => {
   const view: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, coins: 2, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"] } } };
   const text = renderAgentViewText(view);
-  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value varies\)$/m);
+  assert.match(text, /^GAME .*, coins 2, \$7 available \(\$2 played \+ \$5 in unplayed treasures\), plus unplayed Bank \(value or effect: see card\)$/m);
   assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
@@ -271,4 +291,74 @@ test("a buy decision says that ending buys leads to the Night phase when Night c
   const endBuys = secondBuy.decision!.options.find((option) => option.kind === "decline")!;
   assert.match(renderAgentViewText(view), new RegExp(`^ {2}NOTE Night cards .* To play Monastery, choose ${endBuys.index} \\(End Buys\\) when done buying; .*Night phase\\.$`, "m"));
   assert.doesNotMatch(renderAgentViewText(secondBuy), /NOTE Night/);
+});
+
+test("a buy decision says which treasures the buy list leaves out or would never play", () => {
+  const decision = firstBuy.decision!;
+  const playGroup = decision.groups.find((group) => group.kind === "play")!.group;
+  const extra = ["Bank", "Venture"].map((card, offset) => ({ index: decision.options.length + offset, group: playGroup, kind: "card" as const, label: card, card }));
+  const [bank, venture] = extra as [(typeof extra)[0], (typeof extra)[0]];
+  const view: AgentView = {
+    ...firstBuy,
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 4, potions: 0, variable: ["Bank"] } },
+    decision: { ...decision, options: [...decision.options, ...extra] }
+  };
+  const text = renderAgentViewText(view);
+  assert.match(text, new RegExp(`^ {2}NOTE the buy list only counts treasures with a fixed value.* Bank must be played first, one at a time, before buying: ${bank.index} \\(Bank\\)\\.$`, "m"));
+  assert.match(text, new RegExp(`^ {2}NOTE buying a card plays only .*, so Venture may never be played\\. To play it, choose ${venture.index} \\(Venture\\) before buying\\.$`, "m"));
+  assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
+});
+
+test("a result says how the game ended when the supply or a resignation shows it", () => {
+  const players = [
+    { name: "colonelpanic8", rank: 1, points: 48, turns: 17, resigned: false },
+    { name: "Lord Rattington", rank: 2, points: 18, turns: 16, resigned: false }
+  ];
+  const over = (supply: AgentView["supply"], result = { players }): string =>
+    renderGameOverText({ ...secondBuy, supply, game: { ...secondBuy.game, running: false, result } }, result).split("\n")[1]!;
+  const emptied = (...cards: string[]) => secondBuy.supply.map((pile) => (cards.includes(pile.card) ? { ...pile, count: 0 } : pile));
+
+  assert.equal(over(emptied("Province")), "RESULT 1. colonelpanic8 48 VP in 17 turns, 2. Lord Rattington 18 VP in 16 turns; ended because the Province pile ran out");
+  assert.match(over(emptied("Curse", "Moat", "Cellar")), /; ended because 3 supply piles ran out \(Curse, Moat, Cellar\)$/);
+  assert.doesNotMatch(over(emptied("Curse", "Moat")), /ended/);
+  const resigned = { players: [players[0]!, { ...players[1]!, resigned: true }] };
+  assert.match(over(secondBuy.supply, resigned), /Lord Rattington 18 VP in 16 turns \(resigned\); ended because Lord Rattington resigned$/);
+});
+
+test("an extra turn is marked on the status line", () => {
+  const turnKinds = ["REGULAR", "POSSESSION", "MISSION", "OUTPOST", "SEIZE_THE_DAY"];
+  assert.equal(extraTurnKind(0, turnKinds), undefined);
+  assert.equal(extraTurnKind(4, turnKinds), "seize the day");
+  assert.equal(extraTurnKind(9, turnKinds), "type 9");
+  const extra: AgentView = { ...firstBuy, turn: { ...firstBuy.turn, number: 12, extra: "seize the day" } };
+  assert.match(renderAgentViewText(extra), /^GAME \d+: turn 12 \(extra turn: seize the day\), your turn, /);
+});
+
+test("a pile's Trait is shown on the pile and on every option for its cards", () => {
+  const view: AgentView = { ...firstBuy, supply: firstBuy.supply.map((pile) => (pile.card === "Witch" ? { ...pile, trait: "Reckless" } : pile)) };
+  const text = renderAgentViewText(view);
+  assert.match(text, /^SUPPLY .*, Witch \$5 x10 \[trait: Reckless\], /m);
+  const witch = view.decision!.options.find((option) => option.card === "Witch")!;
+  assert.match(text, new RegExp(`^ {4}${witch.index}: Witch \\$5 \\[trait: Reckless\\]$`, "m"));
+  assert.match(renderAgentViewDelta(firstBuy, view), /^SUPPLY \(changed\) Witch \$5 x10 \[trait: Reckless\]$/m);
+});
+
+test("a log the client rebuilt shorter, as after a reload, gets a full view instead of a delta", async () => {
+  const { client } = fakeClient([firstBuy]);
+  const call = client.call as (method: string, params: unknown[]) => Promise<unknown>;
+  let rebuilt = false;
+  const reloading = {
+    call: async (method: string, params: unknown[]) => {
+      const result = await call(method, params);
+      if (method !== "getLog" || !rebuilt) return result;
+      const { entries } = result as { entries: Array<{ index: number }> };
+      return { entries: entries.filter((entry) => entry.index < 2), lastIndex: 1 };
+    }
+  } as Parameters<typeof createDominionTools>[0];
+  const tools = createDominionTools(reloading, cardData);
+  await tool(tools, "wait").run({}, live);
+  rebuilt = true;
+  const again = await tool(tools, "wait").run({}, live);
+  assert.match(again, /^YOU: /m);
+  assert.match(again, /^LOG$/m);
 });

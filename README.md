@@ -128,7 +128,7 @@ window.__dominionNavigator.getLog({ afterIndex: 40, limit: 50 }) // the whole ga
 window.__dominionNavigator.inspect("game.state.zones.3", { depth: 2 })
 ```
 
-`startBotGame` works from the lobby, a table, or a finished game. `kingdom` names cards and landscapes the table must use; the server fills the rest at random, and silently refuses to start a kingdom with cards the account cannot play. `inspect` dumps raw client or tracker state at a dotted path (roots: `game`, `table`, `meta`, `knowledge`, `probe`, `window`). It is for debugging: unlike the view, it is not limited to what the player may know.
+`startBotGame` works from the lobby, a table, or a finished game. `kingdom` names cards and landscapes the table must use, and a split pile by any of its cards or its plural (Tent or Forts both give the Fort pile); the server fills the rest at random, and silently refuses to start a kingdom with cards the account cannot play. `inspect` dumps raw client or tracker state at a dotted path (roots: `game`, `table`, `meta`, `knowledge`, `probe`, `window`). It is for debugging: unlike the view, it is not limited to what the player may know.
 
 ## Playing Through MCP
 
@@ -155,7 +155,9 @@ node --import tsx scripts/mcp-server.ts
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
 
-State the view has no field for (tokens, counters on piles or cards, bought projects, traits, reminders, extra turns) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
+An extra turn is marked on the status line, as in `turn 12 (extra turn: seize the day)`, and a pile's Trait on the pile and on options for its cards, as in `Old Witch $5 [trait: Reckless]`. A finished game's `RESULT` gives each player's turns and, when the supply or a resignation shows it, how the game ended. In the buy phase, a `NOTE` names the unplayed treasures the buy list does not count (a value that is not fixed, such as Bank's) or that buying would never play (one that does more than make money), with the options that play them.
+
+State the view has no field for (tokens, counters on piles or cards, bought projects, reminders, who controls the turn) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
 
 ## Debugging
 

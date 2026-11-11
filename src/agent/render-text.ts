@@ -47,6 +47,19 @@ function others(pile: PileView): string {
   return pile.others?.length ? ` (pile also holds ${pile.others.join(", ")})` : "";
 }
 
+function traitLabel(trait: string | undefined): string {
+  return trait ? ` [trait: ${trait}]` : "";
+}
+
+/** The Trait on each card's pile, keyed by every card the pile holds. */
+function traits(view: AgentView): Map<string, string> {
+  return new Map(
+    [...view.supply, ...view.nonSupply]
+      .filter((pile) => pile.trait)
+      .flatMap((pile) => [pile.card, ...(pile.others ?? [])].map((card) => [card, pile.trait!] as const))
+  );
+}
+
 function pileCosts(view: AgentView): Map<string, Cost> {
   return new Map(
     [...view.supply, ...view.nonSupply, ...view.landscapes].filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!] as const)
@@ -54,6 +67,8 @@ function pileCosts(view: AgentView): Map<string, Cost> {
 }
 
 const AUTOPLAY = "Autoplay Treasures";
+/** Treasures that only make money, so it does not matter whether they are played. */
+const PLAIN_TREASURES = new Set(["Copper", "Silver", "Gold", "Platinum", "Potion"]);
 
 function pileTypes(view: AgentView): Map<string, string[]> {
   return new Map([...view.supply, ...view.nonSupply, ...view.landscapes].map((pile) => [pile.card, pile.types] as const));
@@ -68,6 +83,21 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   const autoplay = value.options.find((option) => option.kind === "button" && option.label === AUTOPLAY);
   const playFirst = autoplay ? `choose ${autoplay.index} (${AUTOPLAY}) first` : "play your treasures first";
   const buys = view.turn.buys;
+  const playGroup = value.groups.find((group) => group.kind === "play");
+  const playable = value.options.filter((option) => option.group === playGroup?.group && option.card);
+  const playOptions = (cards: Set<string>): string => playable.filter((option) => cards.has(option.card!)).map((option) => `${option.index} (${option.label})`).join(", ");
+  const variable = new Set(view.turn.treasureInHand?.variable ?? []);
+  const special = new Set(playable.map((option) => option.card!).filter((card) => !PLAIN_TREASURES.has(card) && !variable.has(card)));
+  if (variable.size && playOptions(variable)) {
+    notes.push(
+      `NOTE the buy list only counts treasures with a fixed value, so it may leave out cards you can afford. ${[...variable].join(", ")} must be played first, one at a time, before buying: ${playOptions(variable)}.`
+    );
+  }
+  if (special.size) {
+    notes.push(
+      `NOTE buying a card plays only the treasures that card needs and leaves the rest in hand, so ${[...special].join(", ")} may never be played. To play ${special.size > 1 ? "them" : "it"}, choose ${playOptions(special)} before buying.`
+    );
+  }
   if (autoplay && buys !== undefined && buys > 1) {
     notes.push(`NOTE buying a card plays only the treasures that card needs and leaves the rest in hand. With ${buys} buys, ${playFirst}.`);
   }
@@ -89,6 +119,7 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
 /** Every card option carries its cost, from the client or else from its pile, and a landscape its type. */
 function decision(view: AgentView, value: Decision): string[] {
   const costs = pileCosts(view);
+  const cardTraits = traits(view);
   const landscapeTypes = new Map(view.landscapes.map((pile) => [pile.card, pile.types[0]] as const));
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   if (value.alternatives) {
@@ -108,7 +139,7 @@ function decision(view: AgentView, value: Decision): string[] {
       const price = option.cost ?? (option.card ? costs.get(option.card) : undefined);
       const landscape = option.card ? landscapeTypes.get(option.card) : undefined;
       lines.push(
-        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
+        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${traitLabel(option.card && cardTraits.get(option.card))}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
       );
     }
   }
@@ -126,7 +157,7 @@ function available(turn: TurnView, hand: HandTreasure): string {
   const unplayed = hand.coins || hand.potions ? ` + ${money(hand.coins, hand.potions)} in unplayed treasures` : "";
   const counted: CardCounter = {};
   for (const name of hand.variable) counted[name] = (counted[name] ?? 0) + 1;
-  const variable = hand.variable.length ? `, plus unplayed ${cards(counted)} (value varies)` : "";
+  const variable = hand.variable.length ? `, plus unplayed ${cards(counted)} (value or effect: see card)` : "";
   return `${money(coins + hand.coins, potions + hand.potions)} available (${money(coins, potions)} played${unplayed})${variable}`;
 }
 
@@ -145,8 +176,23 @@ function turnLine(turn: TurnSummary): string {
   return `  turn ${turn.turn} ${turn.player}: made $${turn.coins}, bought ${turn.bought.join(", ") || "nothing"}${gained}`;
 }
 
-function resultLine(value: GameResult): string {
-  return `RESULT ${value.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`;
+/** How a finished game ended, when its result and final supply show it. */
+function endCondition(view: AgentView, value: GameResult): string | undefined {
+  const resigned = value.players.filter((item) => item.resigned).map((item) => item.name);
+  if (resigned.length) return `${resigned.join(" and ")} resigned`;
+  const emptied = view.supply.filter((pile) => pile.count === 0).map((pile) => pile.card);
+  const enders = ["Province", "Colony"].filter((card) => emptied.includes(card));
+  if (enders.length) return `the ${enders.join(" and ")} pile ran out`;
+  const piles = value.players.length >= 5 ? 4 : 3;
+  return emptied.length >= piles ? `${emptied.length} supply piles ran out (${emptied.join(", ")})` : undefined;
+}
+
+function resultLine(view: AgentView, value: GameResult): string {
+  const players = value.players.map(
+    (item) => `${item.rank}. ${item.name} ${item.points} VP in ${item.turns} turn${item.turns === 1 ? "" : "s"}${item.resigned ? " (resigned)" : ""}`
+  );
+  const ended = endCondition(view, value);
+  return `RESULT ${players.join(", ")}${ended ? `; ended because ${ended}` : ""}`;
 }
 
 /**
@@ -160,7 +206,7 @@ type Block =
 function blocks(view: AgentView): Block[] {
   const turn = view.turn;
   const status = [
-    turn.number !== undefined ? `turn ${turn.number}` : "",
+    turn.number !== undefined ? `turn ${turn.number}${turn.extra ? ` (extra turn: ${turn.extra})` : ""}` : turn.extra ? `extra turn: ${turn.extra}` : "",
     turn.activePlayer ? `${turn.yourTurn ? "your turn" : `${turn.activePlayer}'s turn`}` : "",
     turn.phase ? `${turn.phase} phase` : "",
     ...(["actions", "buys", "coins"] as const).map((key) => (turn[key] !== undefined ? `${key} ${turn[key]}` : "")),
@@ -170,17 +216,17 @@ function blocks(view: AgentView): Block[] {
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];
   if (view.game.running) game.push(score(view));
-  if (view.game.result) game.push(resultLine(view.game.result));
+  if (view.game.result) game.push(resultLine(view, view.game.result));
 
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
   for (const opponent of view.opponents) result.push({ kind: "lines", key: `player:${opponent.index}`, lines: player("OPPONENT", opponent) });
-  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${others(pile)}` })) });
+  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
   if (view.landscapes.length) {
     result.push({ kind: "piles", key: "landscapes", label: "LANDSCAPES", piles: view.landscapes.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)}` })) });
   }
   if (view.nonSupply.length) {
-    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${others(pile)}` })) });
+    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
   }
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });
@@ -205,7 +251,7 @@ export function renderGameOverText(view: AgentView, result: GameResult): string 
   const players = [...(view.you ? [["YOU", view.you] as const] : []), ...view.opponents.map((item) => ["OPPONENT", item] as const)];
   return [
     `GAME ${view.game.number ?? "?"} (over)`,
-    resultLine(result),
+    resultLine(view, result),
     ...players.map(([label, item]) => `${label}: ${item.name}${item.points !== undefined ? ` (${item.points} VP)` : ""} ${owns(item)}`)
   ].join("\n");
 }
