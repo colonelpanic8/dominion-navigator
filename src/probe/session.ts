@@ -15,6 +15,8 @@ const POLL_MS = 200;
 const START_TIMEOUT_MS = 30_000;
 const SCREEN_CHANGE_TIMEOUT_MS = 10_000;
 const RULE_CHANGE_TIMEOUT_MS = 5_000;
+/** The kingdom editor mounts some time after the table screen appears, as after an end-of-game notice. */
+const EDITOR_MOUNT_TIMEOUT_MS = 5_000;
 
 export type NewGameOptions = {
   bots: number;
@@ -100,7 +102,10 @@ function resolveKingdom(names: string[]): RuntimeCardName[] {
 /** Rule changes round-trip through the server, so each step waits for the table to show it. */
 async function setKingdom(tableService: RuntimeTableService, cards: RuntimeCardName[]): Promise<void> {
   if (requiredCardNames(tableService).length > 0) {
-    const rules = getComponentController<{ clearKingdom?: () => void }>("kingdom-rules", "$kingdomRulesController");
+    type KingdomRules = { clearKingdom?: () => void };
+    const editor = (): KingdomRules | undefined => getComponentController<KingdomRules>("kingdom-rules", "$kingdomRulesController");
+    await waitUntil(() => Boolean(editor()?.clearKingdom), EDITOR_MOUNT_TIMEOUT_MS);
+    const rules = editor();
     if (!rules?.clearKingdom) throw new ActionError("the table's kingdom editor is not available");
     rules.clearKingdom();
     if (!(await waitUntil(() => requiredCardNames(tableService).length === 0, RULE_CHANGE_TIMEOUT_MS))) {
@@ -181,7 +186,9 @@ async function startGame(options: NewGameOptions): Promise<SessionState> {
         const table = session.table;
         // An open seat lets a person sit down before the game starts.
         const seatsFit = (table?.bots.length === bots && table.openSeats === 0) || (kingdom.length > 0 && table?.bots.length === 0);
-        if (!tableService || !table?.host || table.players.length !== 1 || !seatsFit) {
+        // The lobby's bot match picks a random kingdom without the table's kingdom editor.
+        const keepsOldKingdom = kingdom.length === 0 && tableService !== undefined && requiredCardNames(tableService).length > 0;
+        if (!tableService || !table?.host || table.players.length !== 1 || !seatsFit || keepsOldKingdom) {
           tableService?.leave?.();
           await waitUntil(() => readSession().screen === "lobby", SCREEN_CHANGE_TIMEOUT_MS);
           break;
