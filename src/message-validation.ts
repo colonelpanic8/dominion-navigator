@@ -90,6 +90,42 @@ function isPile(value: unknown): boolean {
   );
 }
 
+function isLocationGroup(value: unknown): boolean {
+  return isObject(value) && isStringArray(value.zoneKeys) && isStringArray(value.zoneNames) && isCounter(value.knownCards) && isCount(value.totalCount);
+}
+
+function isKnowledgeSummary(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    Array.isArray(value.players) &&
+    value.players.every(
+      (player) =>
+        isObject(player) &&
+        isPlayer(player.player) &&
+        (player.confidence === "partial" || player.confidence === "observed") &&
+        isCounter(player.totalKnownOwned) &&
+        isCount(player.totalUnknownOwned) &&
+        isCounter(player.unlocatedKnownCards) &&
+        isCount(player.unknownLocatedCount) &&
+        Array.isArray(player.ambiguousLocationGroups) &&
+        player.ambiguousLocationGroups.every(isLocationGroup) &&
+        Array.isArray(player.locationCandidateGroups) &&
+        player.locationCandidateGroups.every((group) => isLocationGroup(group) && isCount((group as Json).outsideCount)) &&
+        Array.isArray(player.zones) &&
+        player.zones.every(
+          (zone) =>
+            isObject(zone) &&
+            typeof zone.zoneKey === "string" &&
+            typeof zone.zoneName === "string" &&
+            isCounter(zone.knownCards) &&
+            isCount(zone.unknownCount) &&
+            isCount(zone.ambiguousCount) &&
+            isCount(zone.totalCount)
+        )
+    )
+  );
+}
+
 /** Returns the message if `data` is a well-formed navigator message, otherwise undefined. */
 export function parseNavigatorMessage(data: unknown): NavigatorMessage | undefined {
   if (!isObject(data) || data.source !== MESSAGE_SOURCE) return undefined;
@@ -100,9 +136,9 @@ export function parseNavigatorMessage(data: unknown): NavigatorMessage | undefin
         ? (data as NavigatorMessage)
         : undefined;
     case "snapshot":
-      return isSnapshot(payload) ? (data as NavigatorMessage) : undefined;
+      return isCount(data.seq) && isSnapshot(payload) ? (data as NavigatorMessage) : undefined;
     case "card-move":
-      return isCardMove(payload) ? (data as NavigatorMessage) : undefined;
+      return isCount(data.seq) && isCardMove(payload) ? (data as NavigatorMessage) : undefined;
     case "request-snapshot":
       return data as NavigatorMessage;
     case "show-draw-knowledge-window":
@@ -115,6 +151,8 @@ export function parseNavigatorMessage(data: unknown): NavigatorMessage | undefin
         isPile(payload.entireDeck)
         ? (data as NavigatorMessage)
         : undefined;
+    case "knowledge-update":
+      return isObject(payload) && isCount(payload.seq) && isKnowledgeSummary(payload.summary) ? (data as NavigatorMessage) : undefined;
     default:
       return undefined;
   }

@@ -1,3 +1,5 @@
+import type { KnowledgeSummary } from "./knowledge";
+
 export const MESSAGE_SOURCE = "dominion-navigator";
 
 export type ZoneSummary = {
@@ -103,15 +105,18 @@ export type ProbeStatusMessage = {
   };
 };
 
+/** `seq` numbers probe events so the probe can tell when the knowledge model has caught up. */
 export type ProbeSnapshotMessage = {
   source: typeof MESSAGE_SOURCE;
   type: "snapshot";
+  seq: number;
   payload: NavigatorSnapshot;
 };
 
 export type ProbeMoveMessage = {
   source: typeof MESSAGE_SOURCE;
   type: "card-move";
+  seq: number;
   payload: CardMoveSummary;
 };
 
@@ -129,7 +134,17 @@ export type ShowDrawKnowledgeWindowCommand = {
   payload: DrawKnowledgeWindowPayload;
 };
 
+/** The content script's knowledge model after it processed probe event `seq`. */
+export type KnowledgeUpdateCommand = {
+  source: typeof MESSAGE_SOURCE;
+  type: "knowledge-update";
+  payload: {
+    seq: number;
+    summary: KnowledgeSummary;
+  };
+};
+
 /** Content script -> page probe. */
-export type ContentCommand = RequestSnapshotCommand | ShowDrawKnowledgeWindowCommand;
+export type ContentCommand = RequestSnapshotCommand | ShowDrawKnowledgeWindowCommand | KnowledgeUpdateCommand;
 
 export type NavigatorMessage = ProbeMessage | ContentCommand;

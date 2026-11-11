@@ -1,7 +1,10 @@
+import type { AgentView } from "./agent/types";
 import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
 import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot } from "./messages";
+import { AgentBridge, WaitResult } from "./probe/agent-bridge";
 import { showDrawKnowledgeWindow } from "./probe/knowledge-modal";
 import { DominionGlobals, getGame, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
+import type { AnswerResult } from "./probe/questions";
 import { GAME_NOT_READY, postStatus } from "./probe/status";
 import { gameFingerprint, makeMoveSummary, makeSnapshot } from "./probe/summaries";
 
@@ -15,17 +18,23 @@ type ProbeState = {
   lastTurnNumber: number | undefined;
   events: Array<CardMoveSummary | NavigatorSnapshot>;
   requestSnapshot: () => void;
+  getAgentView: () => AgentView;
+  getAgentViewText: () => string;
+  waitForDecision: (options?: { timeoutMs?: number; pollMs?: number }) => Promise<WaitResult>;
+  answer: (decisionId: string, indices: number[]) => AnswerResult;
+  debugState: AgentBridge["debugState"];
 };
 
 const win = window as Window & typeof globalThis & DominionGlobals & { __dominionNavigator?: ProbeState };
 
 const PATCHED_MARKER = "__dominionNavigatorPatched";
+const agent = new AgentBridge();
 
 function emitMoveSummary(game: RuntimeGame, move: RuntimeCardMove, phase: CardMoveSummary["phase"]): void {
   try {
     const summary = makeMoveSummary(game, move, phase);
     win.__dominionNavigator?.events.push(summary);
-    postNavigatorMessage({ source: MESSAGE_SOURCE, type: "card-move", payload: summary });
+    postNavigatorMessage({ source: MESSAGE_SOURCE, type: "card-move", seq: agent.nextEventSeq(), payload: summary });
   } catch (error) {
     postStatus(false, `Failed to summarize ${phase} card move: ${String(error)}`);
   }
@@ -40,7 +49,7 @@ function emitSnapshot(): void {
 
   const snapshot = makeSnapshot(game, win.__dominionNavigator?.gameInstanceId ?? "unknown-game");
   win.__dominionNavigator?.events.push(snapshot);
-  postNavigatorMessage({ source: MESSAGE_SOURCE, type: "snapshot", payload: snapshot });
+  postNavigatorMessage({ source: MESSAGE_SOURCE, type: "snapshot", seq: agent.nextEventSeq(), payload: snapshot });
 }
 
 function startNewGameInstance(game: RuntimeGame, fingerprint?: string): void {
@@ -52,6 +61,7 @@ function startNewGameInstance(game: RuntimeGame, fingerprint?: string): void {
   probe.gameInstanceSerial += 1;
   probe.gameInstanceId = `game-${probe.gameInstanceSerial}-${Date.now()}`;
   probe.events = [];
+  agent.resetForNewGame();
 }
 
 function updateGameInstance(game: RuntimeGame): void {
@@ -134,7 +144,12 @@ function install(): void {
     gameFingerprint: undefined,
     lastTurnNumber: undefined,
     events: [],
-    requestSnapshot: emitSnapshot
+    requestSnapshot: emitSnapshot,
+    getAgentView: () => agent.getAgentView(),
+    getAgentViewText: () => agent.getAgentViewText(),
+    waitForDecision: (options) => agent.waitForDecision(options),
+    answer: (decisionId, indices) => agent.answer(decisionId, indices),
+    debugState: () => agent.debugState()
   };
   win.__dominionNavigator = probe;
   if (game) probe.game = game;
@@ -162,6 +177,9 @@ function install(): void {
       }
       case "show-draw-knowledge-window":
         showDrawKnowledgeWindow(message.payload);
+        return;
+      case "knowledge-update":
+        agent.updateKnowledge(message.payload.seq, message.payload.summary);
         return;
     }
   });

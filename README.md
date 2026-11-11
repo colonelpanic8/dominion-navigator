@@ -30,11 +30,15 @@ The knowledge model separates Dominion's internal zone state from what the playe
 
 ## Source Layout
 
-- `src/messages.ts`: the `window.postMessage` protocol between the page probe and the content script (`ProbeMessage` from the probe, `ContentCommand` to it).
-- `src/page-probe.ts`: page-context entry point: probe state, client hooks, and command handling.
+- `src/messages.ts`: the `window.postMessage` protocol between the page probe and the content script (`ProbeMessage` from the probe, `ContentCommand` to it). `src/message-bus.ts` posts and receives them; `src/message-validation.ts` checks every incoming message's shape, since any page script can post on the same channel.
+- `src/page-probe.ts`: page-context entry point: probe state, client hooks, command handling, and the agent API.
   - `src/probe/runtime-types.ts`: the client objects the probe reads.
   - `src/probe/summaries.ts`: serializes zones, snapshots, and card moves.
   - `src/probe/knowledge-modal.ts`: the card-details modal, rendered with the client's own card stacks.
+  - `src/probe/questions.ts`: reads the client's open questions and answers them.
+  - `src/probe/table-state.ts`: public table state (supply, landscapes, trash, counters, turn).
+  - `src/probe/agent-bridge.ts`: the agent API on `window.__dominionNavigator`.
+- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text rendering, decision building and answer validation (`decisions.ts`), and the card glossary.
 - `src/content-script.ts`: extension entry point that wires the pieces below together.
   - `src/content/overlay.ts`: the shadow-DOM overlay.
   - `src/content/knowledge-window.ts`: builds the card-details modal payload.
