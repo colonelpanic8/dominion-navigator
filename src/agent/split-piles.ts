@@ -30,10 +30,10 @@ function randomizerPiles(cards: CardTypes[]): Array<{ randomizer: string; pileTy
     });
 }
 
-/** Every card of each split or mixed pile, keyed by each of those cards. */
+/** Every card of each split or mixed pile, keyed by each of those cards and by the pile's randomizer. */
 export function splitPiles(cards: CardTypes[]): Map<string, string[]> {
   const piles = new Map<string, string[]>();
-  for (const { members } of randomizerPiles(cards)) for (const member of members) piles.set(member, members);
+  for (const { randomizer, members } of randomizerPiles(cards)) for (const card of [randomizer, ...members]) piles.set(card, members);
   for (const pair of PAIRED_PILES) for (const member of pair) piles.set(member, pair);
   return piles;
 }
