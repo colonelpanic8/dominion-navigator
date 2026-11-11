@@ -151,7 +151,7 @@ node --import tsx scripts/mcp-server.ts
 | `cards` | Card text, types and current cost by name. |
 | `inspect` | Raw client or tracker state at a path, for debugging. |
 
-`step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
+`step` first echoes what it chose by label, as a `CHOSE` line. `step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
 

@@ -85,6 +85,7 @@ test("step answers forced decisions itself and then reports only what changed", 
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
   const second = await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
   assert.deepEqual(answers.at(-1), [firstBuy.decision!.id, [buy]]);
+  assert.ok(second.startsWith(`CHOSE ${firstBuy.decision!.id}: [buy] Silver\n`), second.split("\n")[0]);
   assert.match(second, new RegExp(`^DECISION ${secondBuy.decision!.id}: `, "m"));
   assert.doesNotMatch(second, /^CARDS$/m);
   assert.ok(second.length < renderAgentViewText(secondBuy).length);
