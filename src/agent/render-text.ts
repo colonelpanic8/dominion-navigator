@@ -1,5 +1,5 @@
 import type { CardCounter } from "../knowledge";
-import { AgentView, Cost, Decision, HandTreasure, PlayerView, ZoneView } from "./types";
+import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
   const entries = Object.entries(counter);
@@ -16,6 +16,12 @@ function cost(value: Cost | undefined): string {
   return [`$${value.coins}`, value.potions ? `${value.potions}P` : "", value.debt ? `${value.debt}D` : ""].filter(Boolean).join("+");
 }
 
+function owns(view: PlayerView): string {
+  const count = Object.values(view.owned.known).reduce((total, item) => total + item, view.owned.unknown);
+  const owned = [cards(view.owned.known), view.owned.unknown ? `${view.owned.unknown} unknown` : ""].filter(Boolean).join("; ");
+  return `owns ${count} card${count === 1 ? "" : "s"}${owned ? `: ${owned}` : ""}`;
+}
+
 function player(label: string, view: PlayerView): string[] {
   const lines = [`${label}: ${view.name}${view.points !== undefined ? ` (${view.points} VP)` : ""}`];
   lines.push(`  hand ${zone(view.hand)}`);
@@ -28,9 +34,7 @@ function player(label: string, view: PlayerView): string[] {
     lines.push(`  ${group.zones.join("+")} hold ${group.count} of: ${cards(group.candidates)}${outside}`);
   }
   if (Object.keys(view.unlocated).length) lines.push(`  unlocated ${cards(view.unlocated)}`);
-  const ownedCount = Object.values(view.owned.known).reduce((total, count) => total + count, view.owned.unknown);
-  const owned = [cards(view.owned.known), view.owned.unknown ? `${view.owned.unknown} unknown` : ""].filter(Boolean).join("; ");
-  lines.push(`  owns ${ownedCount} card${ownedCount === 1 ? "" : "s"}${owned ? `: ${owned}` : ""}`);
+  lines.push(`  ${owns(view)}`);
   const counters = Object.entries(view.counters)
     .filter(([, value]) => value !== 0)
     .map(([name, value]) => `${name} ${value}`);
@@ -89,6 +93,10 @@ function score(view: AgentView): string {
   return `SCORE ${points}${piles ? `; ${piles}` : ""}`;
 }
 
+function resultLine(value: GameResult): string {
+  return `RESULT ${value.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`;
+}
+
 /**
  * A view as independent blocks. A lines block is reprinted whole when any of it
  * changes; a piles block can report single piles because each stands alone.
@@ -110,9 +118,7 @@ function blocks(view: AgentView): Block[] {
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];
   if (view.game.running) game.push(score(view));
-  if (view.game.result) {
-    game.push(`RESULT ${view.game.result.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`);
-  }
+  if (view.game.result) game.push(resultLine(view.game.result));
 
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
@@ -138,6 +144,16 @@ function blocks(view: AgentView): Block[] {
 
 function renderBlock(block: Block): string[] {
   return block.kind === "lines" ? block.lines : [`${block.label} ${block.piles.map((pile) => pile.text).join(", ")}`];
+}
+
+/** A finished game in brief: the result and what each player ended with. */
+export function renderGameOverText(view: AgentView, result: GameResult): string {
+  const players = [...(view.you ? [["YOU", view.you] as const] : []), ...view.opponents.map((item) => ["OPPONENT", item] as const)];
+  return [
+    `GAME ${view.game.number ?? "?"} (over)`,
+    resultLine(result),
+    ...players.map(([label, item]) => `${label}: ${item.name}${item.points !== undefined ? ` (${item.points} VP)` : ""} ${owns(item)}`)
+  ].join("\n");
 }
 
 /** A compact plain-text rendering of an agent view, derived only from the JSON. */

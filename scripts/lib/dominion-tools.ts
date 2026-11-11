@@ -1,5 +1,5 @@
 import { buildCardGlossary, CardDataEntry, renderGlossary, supplyCosts, viewCardNames } from "../../src/agent/glossary";
-import { renderAgentViewDelta, renderAgentViewText } from "../../src/agent/render-text";
+import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../../src/agent/render-text";
 import type { AgentView, Decision, SessionState } from "../../src/agent/types";
 import type { DominionClient, WaitResult } from "./dominion-client";
 import type { Tool } from "./mcp-stdio";
@@ -73,6 +73,7 @@ function forcedAnswer(decision: Decision): number[] | undefined {
   return group.min === 1 && group.max === 1 ? [option.index] : undefined;
 }
 
+const GAME_OVER = "The game is over. Call new_game to play again.";
 const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
 
 export function createDominionTools(client: Pick<DominionClient, "call">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
@@ -133,7 +134,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     }
     lines.push(...(await present(wait.view, mode, signal)));
     if (wait.status === "timeout") lines.push("No decision for you yet. Call wait to keep waiting.");
-    if (wait.status === "game-over") lines.push("The game is over. Call new_game to play again.");
+    if (wait.status === "game-over") lines.push(GAME_OVER);
     if (wait.status === "spectating") lines.push("This account is spectating this game, so there is nothing to answer.");
     if (wait.status === "decision" && !autoAnswer) lines.push(HUMAN_OPPONENTS);
     if (wait.knowledgeLag > 0 && wait.status === "decision") {
@@ -149,7 +150,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     {
       name: "state",
       description:
-        "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game.",
+        "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game. A finished game shows only its result and each player's cards.",
       inputSchema: { type: "object", properties: {} },
       async run(_args, signal) {
         const session = await client.call("getSession", []);
@@ -158,6 +159,9 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
           view = await client.call("getAgentView", []);
         } catch {
           return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
+        }
+        if (!view.game.running && view.game.result) {
+          return [describeSession(session), renderGameOverText(view, view.game.result), GAME_OVER].join("\n");
         }
         return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
       }
