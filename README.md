@@ -143,13 +143,15 @@ node --import tsx scripts/mcp-server.ts
 | Tool | What it does |
 | --- | --- |
 | `state` | The client's screen and, in a game, the whole table plus the text of every card in it. A finished game shows only its result and each player's cards. |
-| `step` | Answers the open decision with option numbers, waits for the next decision, and returns what changed. |
+| `step` | Answers the open decision by option label or number, waits for the next decision, and returns what changed. |
 | `wait` | Waits for the next decision without answering. |
 | `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
 | `resign` | Resigns the game in progress. |
 | `log` | Rereads the game log. |
 | `cards` | Card text, types and current cost by name. |
 | `inspect` | Raw client or tracker state at a path, for debugging. |
+
+`step` takes each option as a label or a number. Labels are the safer default, because a card's number can change between decisions. A label matches without case (`"Silver"`), may carry its group kind to pick between groups (`"buy:Silver"`, `"play:Copper"`), and takes one more matching option each time it is repeated (`["Copper", "Copper"]`). A label that matches nothing, or options that are not interchangeable, fails without acting and lists the options. Labels are resolved by the MCP server; the page API takes option numbers only.
 
 `step` first echoes what it chose by label, as a `CHOSE` line. `step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
 

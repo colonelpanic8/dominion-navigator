@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveChoose } from "../scripts/lib/choose-labels";
 import { createDominionTools } from "../scripts/lib/dominion-tools";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
@@ -112,7 +113,28 @@ test("step refuses a stale decision and shows the one that is open", async () =>
     assert.match(error.message, new RegExp(`^DECISION ${firstBuy.decision!.id}: `, "m"));
     return true;
   });
-  await assert.rejects(tool(tools, "step").run({ decision: "d2", choose: ["Silver"] }, live), /choose must be an array of numbers/);
+  await assert.rejects(tool(tools, "step").run({ decision: "d999", choose: ["Silver"] }, live), /Answer rejected: decision d999 is not open/);
+  await assert.rejects(tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [true] }, live), /choose must be an array of option numbers or option labels/);
+});
+
+test("step chooses options by label, and refuses a label that is unknown or names different options", async () => {
+  const decision = firstBuy.decision!;
+  const index = (kind: string, label: string): number[] =>
+    decision.options.filter((option) => option.label === label && decision.groups[option.group]!.kind === kind).map((option) => option.index);
+  const coppers = index("play", "Copper");
+  assert.deepEqual(resolveChoose(decision, ["play:Copper", coppers[0]!, "PLAY:copper"]), [coppers[1], coppers[0], coppers[2]]);
+  assert.deepEqual(resolveChoose(decision, ["silver", "Autoplay Treasures"]), [...index("buy", "Silver"), ...index("button", "Autoplay Treasures")]);
+  assert.throws(() => resolveChoose(decision, ["Copper"]), /"Copper" is ambiguous in d2: buy:Copper \(3\), play:Copper \(15\), .*Prefix the label with its group kind, e.g. "buy:Copper"/);
+  assert.throws(() => resolveChoose(decision, ["Slver"]), /"Slver" names no option of d2\. Options: buy:Bandit \(0\), /);
+  assert.throws(() => resolveChoose(decision, Array(coppers.length + 1).fill("play:Copper")), /all are already chosen/);
+
+  const { answers, client } = fakeClient([firstBuy, secondBuy]);
+  const tools = createDominionTools(client, cardData);
+  await assert.rejects(tool(tools, "step").run({ decision: decision.id, choose: ["Copper"] }, live), /ambiguous/);
+  assert.deepEqual(answers, []);
+  const result = await tool(tools, "step").run({ decision: decision.id, choose: ["buy:silver"] }, live);
+  assert.deepEqual(answers, [[decision.id, index("buy", "Silver")]]);
+  assert.ok(result.startsWith(`CHOSE ${decision.id}: [buy] Silver\n`));
 });
 
 test("step does not act against human opponents unless that is allowed", async () => {

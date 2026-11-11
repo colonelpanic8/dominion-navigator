@@ -1,6 +1,7 @@
 import { buildCardGlossary, CardDataEntry, renderGlossary, supplyCosts, viewCardNames } from "../../src/agent/glossary";
 import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../../src/agent/render-text";
 import type { AgentView, Decision, SessionState } from "../../src/agent/types";
+import { resolveChoose } from "./choose-labels";
 import type { DominionClient, WaitResult } from "./dominion-client";
 import type { Tool } from "./mcp-stdio";
 
@@ -12,7 +13,8 @@ export type DominionToolOptions = {
 export const INSTRUCTIONS = [
   "Plays dominion.games through the Dominion Navigator browser extension, without screenshots.",
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
-  "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the option numbers; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
+  "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the options to choose; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
+  "Choose options by label rather than number: option numbers change from one decision to the next. A label matches without case, e.g. \"Silver\"; when a label is in more than one group, prefix the group kind, as in \"buy:Silver\" or \"play:Copper\". Repeat a label to take several options with it: [\"Copper\", \"Copper\"] plays two Coppers. A label that matches nothing, or matches options in different groups, fails without acting and lists the options. Numbers still work, and both can be mixed.",
   "Each option group says how many options it takes. An empty `choose` selects nothing where a group allows 0. When a decision says to answer from ONE of a list of group sets, take options from one set only (groups joined by + may be answered together); the other groups need no answer.",
   "In the buy phase the buy list shows what the treasures in your hand can pay for, and choosing a card plays only the treasures it needs; the rest stay in hand. With more than one buy, choose Autoplay Treasures first so every buy can use all your money. The buy list does not count treasures whose value is not fixed, such as Bank, and Autoplay may skip them; play those, and treasures that do more than make money, one at a time before buying.",
   "Decisions with a single legal answer are answered for you and reported as AUTO lines.",
@@ -48,6 +50,14 @@ function text(args: Record<string, unknown>, name: string): string {
   const value = args[name];
   if (typeof value !== "string" || !value) throw new Error(`${name} must be a non-empty string`);
   return value;
+}
+
+/** Option numbers and labels, as `step` accepts them. */
+function choices(args: Record<string, unknown>): Array<number | string> {
+  const value = args.choose;
+  const valid = (item: unknown): boolean => (typeof item === "number" && Number.isInteger(item)) || (typeof item === "string" && item.trim() !== "");
+  if (!Array.isArray(value) || !value.every(valid)) throw new Error("choose must be an array of option numbers or option labels");
+  return value as Array<number | string>;
 }
 
 function list<T extends "string" | "number">(args: Record<string, unknown>, name: string, type: T): Array<T extends "string" ? string : number> {
@@ -186,29 +196,39 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     {
       name: "step",
       description:
-        "Answers the open decision, then waits for your next one and returns what changed: new log lines, players and piles that differ, and the next decision. Fails without acting if the decision id is stale or the choice is illegal.",
+        "Answers the open decision, then waits for your next one and returns what changed: new log lines, players and piles that differ, and the next decision. Fails without acting if the decision id is stale, a label does not name exactly one kind of option, or the choice is illegal.",
       inputSchema: {
         type: "object",
         properties: {
           decision: { type: "string", description: "Id of the open decision, e.g. d12." },
-          choose: { type: "array", items: { type: "integer" }, description: "Option numbers to choose. Empty selects nothing." },
+          choose: {
+            type: "array",
+            items: { anyOf: [{ type: "string" }, { type: "integer" }] },
+            description:
+              'Options to choose, by label (safer: numbers change between decisions) or number. A label matches without case and may be prefixed by its group kind, as in "buy:Silver" or "play:Copper"; repeat a label to take several options with it. Empty selects nothing.'
+          },
           timeout_s: timeoutProperty
         },
         required: ["decision", "choose"]
       },
       async run(args, signal) {
         const decision = text(args, "decision");
-        const choose = list(args, "choose", "number");
+        const choose = choices(args);
         const timeoutMs = waitMs(args);
         if (!(await mayActInGame())) throw new Error(HUMAN_OPPONENTS);
-        const open = shown?.view.decision?.id === decision ? shown.view.decision : (await client.call("getAgentView", [])).decision;
-        const result = await client.call("answer", [decision, choose]);
-        if (!result.ok) {
+        const openView = shown?.view.decision?.id === decision ? shown.view : await client.call("getAgentView", []);
+        const open = openView.decision?.id === decision ? openView.decision : undefined;
+        const rejected = async (error: string): Promise<Error> => {
           const current = await present(await client.call("getAgentView", []), "delta", signal);
-          throw new Error([`Answer rejected: ${result.error}`, ...current].join("\n"));
-        }
+          return new Error([`Answer rejected: ${error}`, ...current].join("\n"));
+        };
+        const labelled = choose.some((entry) => typeof entry === "string");
+        if (labelled && !open) throw await rejected(`decision ${decision} is not open`);
+        const indices = open ? resolveChoose(open, choose) : (choose as number[]);
+        const result = await client.call("answer", [decision, indices]);
+        if (!result.ok) throw await rejected(result.error);
         const next = await settle(timeoutMs, "delta", true, signal);
-        return open?.id === decision ? `${describeChoice(open, choose)}\n${next}` : next;
+        return open ? `${describeChoice(open, indices)}\n${next}` : next;
       }
     },
     {
