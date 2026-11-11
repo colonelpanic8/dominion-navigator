@@ -15,7 +15,8 @@
     "reload:extension": "node scripts/reload-extension.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:build": "node scripts/dev.mjs --no-auto-reload",
-    "agent:play": "node --import tsx scripts/agent-play.ts"
+    "agent:play": "node --import tsx scripts/agent-play.ts",
+    "agent:mcp": "node --import tsx scripts/mcp-server.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
