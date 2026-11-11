@@ -37,7 +37,15 @@ function player(label: string, view: PlayerView): string[] {
   return lines;
 }
 
-function decision(value: Decision): string[] {
+function pileCosts(view: AgentView): Map<string, Cost> {
+  return new Map(
+    [...view.supply, ...view.nonSupply, ...view.landscapes].filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!] as const)
+  );
+}
+
+/** Buying and gaining are decided by price, so those options carry the pile's current cost. */
+function decision(value: Decision, costs: Map<string, Cost>): string[] {
+  const priced = (group: number): boolean => /buy|gain/.test(value.groups[group]?.kind ?? "");
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
@@ -49,7 +57,8 @@ function decision(value: Decision): string[] {
     if (multipleGroups) lines.push(`  [${group.kind}] ${group.prompt} (${bounds})`);
     else lines.push(`  ${bounds}`);
     for (const option of value.options.filter((item) => item.group === group.group)) {
-      lines.push(`    ${option.index}: ${option.label}${option.kind === "decline" ? " (decline)" : ""}`);
+      const price = option.card && priced(option.group) ? costs.get(option.card) : undefined;
+      lines.push(`    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${option.kind === "decline" ? " (decline)" : ""}`);
     }
   }
   return lines;
@@ -116,7 +125,7 @@ function blocks(view: AgentView): Block[] {
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
-  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision), always: true });
+  if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view)), always: true });
   return result;
 }
 

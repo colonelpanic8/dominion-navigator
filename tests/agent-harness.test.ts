@@ -217,4 +217,6 @@ test("the status says what the hand's treasures make and the score is always pri
   assert.match(text, /^GAME .*, unplayed treasures in hand make \$5 plus Bank \(varies\)$/m);
   assert.match(text, new RegExp(`^SCORE you ${firstBuy.you!.points}, ${firstBuy.opponents[0]!.name} ${firstBuy.opponents[0]!.points}; Province 8 left$`, "m"));
   assert.match(renderAgentViewDelta(view, view), /^SCORE /m);
+  const silver = firstBuy.decision!.options.find((option) => option.label === "Silver" && firstBuy.decision!.groups[option.group]!.kind === "buy")!;
+  assert.match(text, new RegExp(`^ {4}${silver.index}: Silver \\$3$`, "m"));
 });

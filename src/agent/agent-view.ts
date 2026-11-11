@@ -124,7 +124,7 @@ function turnView(table: TableState, decision: Decision | null): TurnView {
     ...counter("Coins"),
     ...counter("Potions"),
     ...counter("Debt"),
-    ...(yourTurn && table.handTreasure && (table.handTreasure.coins || table.handTreasure.potions || table.handTreasure.variable.length)
+    ...(yourTurn && table.running && !table.result && table.handTreasure && (table.handTreasure.coins || table.handTreasure.potions || table.handTreasure.variable.length)
       ? { treasureInHand: table.handTreasure }
       : {})
   };
