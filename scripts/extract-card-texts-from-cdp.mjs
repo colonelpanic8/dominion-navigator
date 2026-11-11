@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { connectCdp, debugPort, debugUrl, evaluate, fetchJson, sleep } from "./lib/cdp.mjs";
 
 const CDP_PORT = debugPort("DOMINION_CDP_PORT");
-const PASS_ENTRY = process.env.DOMINION_PASS_ENTRY ?? "dominion.games/EyeVanMaliceSon";
+const PASS_ENTRY = process.env.DOMINION_PASS_ENTRY ?? "dominion.games/colonelpanic8";
 const OUTPUT_PATH = resolve(process.env.DOMINION_CARD_TEXT_OUTPUT ?? "data/dominion-card-shaped-objects.json");
 
 function passLines(entry) {
