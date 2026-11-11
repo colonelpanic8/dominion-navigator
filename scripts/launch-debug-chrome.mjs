@@ -2,12 +2,13 @@ import { spawn } from "node:child_process";
 import { mkdir, open } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCdpSession, debugPort, debugUrl, sleep } from "./lib/cdp.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const extensionPath = resolve(root, "dist");
 const chrome = process.env.CHROME ?? "google-chrome-stable";
 const profile = process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? "/tmp/dominion-navigator-chrome-profile4";
-const port = Number(process.env.DOMINION_NAVIGATOR_DEBUG_PORT ?? "9226");
+const port = debugPort();
 const url = process.env.DOMINION_NAVIGATOR_URL ?? "https://dominion.games/";
 
 await mkdir(profile, { recursive: true });
@@ -34,9 +35,8 @@ const child = spawn(
   }
 );
 
-let nextId = 1;
+const session = createCdpSession((data) => child.stdio[3].write(`${data}\0`));
 let buffer = Buffer.alloc(0);
-const pending = new Map();
 
 child.stdio[4].on("data", (chunk) => {
   buffer = Buffer.concat([buffer, chunk]);
@@ -44,30 +44,19 @@ child.stdio[4].on("data", (chunk) => {
   while ((delimiterIndex = buffer.indexOf(0)) !== -1) {
     const raw = buffer.subarray(0, delimiterIndex).toString("utf8");
     buffer = buffer.subarray(delimiterIndex + 1);
-    if (!raw) continue;
-    const message = JSON.parse(raw);
-    if (message.id && pending.has(message.id)) {
-      pending.get(message.id)(message);
-      pending.delete(message.id);
-    }
+    if (raw) session.receive(raw);
   }
 });
 
-function send(method, params = {}) {
-  return new Promise((resolvePromise) => {
-    const id = nextId++;
-    pending.set(id, resolvePromise);
-    child.stdio[3].write(`${JSON.stringify({ id, method, params })}\0`);
-  });
-}
+const send = session.send;
 
 async function waitForDebugPort() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      await fetch(`http://127.0.0.1:${port}/json/version`);
+      await fetch(debugUrl(port, "/json/version"));
       return;
     } catch {
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+      await sleep(250);
     }
   }
   throw new Error(`Chrome did not expose the debug port ${port}.`);

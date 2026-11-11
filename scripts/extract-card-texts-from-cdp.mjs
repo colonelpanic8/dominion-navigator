@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { connectCdp, debugPort, debugUrl, evaluate, fetchJson, sleep } from "./lib/cdp.mjs";
 
-const CDP_PORT = process.env.DOMINION_CDP_PORT ?? "9226";
+const CDP_PORT = debugPort("DOMINION_CDP_PORT");
 const PASS_ENTRY = process.env.DOMINION_PASS_ENTRY ?? "dominion.games";
 const OUTPUT_PATH = resolve(process.env.DOMINION_CARD_TEXT_OUTPUT ?? "data/dominion-card-shaped-objects.json");
 
@@ -19,64 +20,16 @@ function credentials(entry) {
   return { username, password };
 }
 
-class CdpConnection {
-  constructor(wsUrl) {
-    this.wsUrl = wsUrl;
-    this.nextId = 1;
-    this.pending = new Map();
-  }
-
-  async open() {
-    this.ws = new WebSocket(this.wsUrl);
-    this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.id && this.pending.has(message.id)) {
-        this.pending.get(message.id)(message);
-        this.pending.delete(message.id);
-      }
-    };
-    await new Promise((resolveOpen, rejectOpen) => {
-      this.ws.onopen = resolveOpen;
-      this.ws.onerror = rejectOpen;
-    });
-    return this;
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    const promise = new Promise((resolveSend) => this.pending.set(id, resolveSend));
-    this.ws.send(JSON.stringify({ id, method, params }));
-    return promise;
-  }
-
-  close() {
-    this.ws?.close();
-  }
-}
-
 async function browserConnection() {
-  const version = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((response) => response.json());
-  return new CdpConnection(version.webSocketDebuggerUrl).open();
+  const version = await fetchJson(debugUrl(CDP_PORT, "/json/version"));
+  return connectCdp(version.webSocketDebuggerUrl);
 }
 
 async function pageConnection(webSocketDebuggerUrl) {
-  const connection = await new CdpConnection(webSocketDebuggerUrl).open();
+  const connection = await connectCdp(webSocketDebuggerUrl);
   await connection.send("Runtime.enable");
   await connection.send("Page.enable");
   return connection;
-}
-
-async function evaluate(page, expression, options = {}) {
-  const result = await page.send("Runtime.evaluate", {
-    expression,
-    awaitPromise: true,
-    returnByValue: true,
-    ...options
-  });
-  if (result.result?.exceptionDetails) {
-    throw new Error(result.result.exceptionDetails.exception?.description ?? result.result.exceptionDetails.text);
-  }
-  return result.result?.result?.value;
 }
 
 async function waitFor(page, expression, timeoutMs = 15000) {
@@ -85,7 +38,7 @@ async function waitFor(page, expression, timeoutMs = 15000) {
   while (Date.now() < deadline) {
     last = await evaluate(page, expression);
     if (last) return last;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+    await sleep(250);
   }
   throw new Error(`Timed out waiting for ${expression}; last=${JSON.stringify(last)}`);
 }
@@ -106,7 +59,7 @@ async function waitForLogin(page, timeoutMs = 25000) {
       })()`
     );
     if (last.loggedIn) return last;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 1000));
+    await sleep(1000);
   }
   throw new Error(`Timed out waiting for login; last=${JSON.stringify(last)}`);
 }
@@ -123,9 +76,9 @@ async function main() {
   });
   if (target.error) throw new Error(`Target.createTarget failed: ${target.error.message}`);
 
-  const targetInfo = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)
-    .then((response) => response.json())
-    .then((targets) => targets.find((candidate) => candidate.id === target.result.targetId));
+  const targetInfo = (await fetchJson(debugUrl(CDP_PORT, "/json/list"))).find(
+    (candidate) => candidate.id === target.result.targetId
+  );
   if (!targetInfo) throw new Error("Could not locate created Dominion target");
 
   const page = await pageConnection(targetInfo.webSocketDebuggerUrl);

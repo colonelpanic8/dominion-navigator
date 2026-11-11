@@ -1,6 +1,6 @@
-import http from "node:http";
+import { connectCdp, debugPort, debugUrl, evaluate, fetchJson } from "./lib/cdp.mjs";
 
-const DEFAULT_CDP_PORT = Number(process.env.CDP_PORT ?? 9226);
+const port = debugPort("CDP_PORT");
 
 function usage() {
   console.error("Usage: node scripts/set-table-kingdom.mjs [--no-bot] <card> [<card> ...]");
@@ -16,63 +16,18 @@ if (cardNames.length === 0) {
   process.exit(1);
 }
 
-function getJson(path) {
-  return new Promise((resolve, reject) => {
-    http
-      .get({ host: "127.0.0.1", port: DEFAULT_CDP_PORT, path }, (response) => {
-        let data = "";
-        response.on("data", (chunk) => (data += chunk));
-        response.on("end", () => resolve(JSON.parse(data)));
-      })
-      .on("error", reject);
-  });
-}
-
 async function evaluateInDominion(expression, timeoutMs = 90000) {
-  const pages = await getJson("/json/list");
+  const pages = await fetchJson(debugUrl(port, "/json/list"));
   const page = pages.find((candidate) => candidate.url?.startsWith("https://dominion.games/"));
-  if (!page) throw new Error(`No dominion.games tab found on CDP port ${DEFAULT_CDP_PORT}`);
+  if (!page) throw new Error(`No dominion.games tab found on CDP port ${port}`);
 
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  let id = 0;
-  const pending = new Map();
-
-  ws.onmessage = (event) => {
-    const message = JSON.parse(typeof event.data === "string" ? event.data : event.data.toString());
-    if (!message.id || !pending.has(message.id)) return;
-    pending.get(message.id)(message);
-    pending.delete(message.id);
-  };
-
-  await new Promise((resolve, reject) => {
-    ws.onopen = resolve;
-    ws.onerror = reject;
-  });
-
-  const send = (method, params = {}) =>
-    new Promise((resolve, reject) => {
-      const call = { id: ++id, method, params };
-      const timer = setTimeout(() => {
-        if (pending.delete(call.id)) reject(new Error(`${method} timed out`));
-      }, timeoutMs);
-      pending.set(call.id, (message) => {
-        clearTimeout(timer);
-        resolve(message);
-      });
-      ws.send(JSON.stringify(call));
-    });
-
-  await send("Runtime.enable");
-  const response = await send("Runtime.evaluate", {
-    expression,
-    returnByValue: true,
-    awaitPromise: true
-  });
-  ws.close();
-
-  if (response.error) throw new Error(JSON.stringify(response.error));
-  if (response.result?.exceptionDetails) throw new Error(JSON.stringify(response.result.exceptionDetails));
-  return response.result?.result?.value;
+  const client = await connectCdp(page.webSocketDebuggerUrl, { timeoutMs });
+  try {
+    await client.send("Runtime.enable");
+    return await evaluate(client, expression);
+  } finally {
+    client.close();
+  }
 }
 
 const result = await evaluateInDominion(`(async () => {

@@ -1,14 +1,11 @@
-import { watchFile } from "node:fs";
-import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import * as esbuild from "esbuild";
 import { spawn } from "node:child_process";
+import { watchFile } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { resolve } from "node:path";
+import * as esbuild from "esbuild";
+import { cleanDist, copyStatic, esbuildConfigs, reportDir, root } from "./lib/extension-build.mjs";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const dist = resolve(root, "dist");
-const reportDir = resolve(root, "invariant-reports");
 const autoReload = !process.argv.includes("--no-auto-reload");
 const reportSinkPort = Number(process.env.DOMINION_NAVIGATOR_REPORT_SINK_PORT ?? "9237");
 let reloadTimer;
@@ -68,16 +65,6 @@ function startReportSink() {
   });
 }
 
-async function copyStatic() {
-  const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
-  await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });
-  await cp(resolve(root, "README.md"), resolve(dist, "README.md"));
-  await mkdir(reportDir, { recursive: true });
-  await rm(resolve(dist, "invariant-reports"), { force: true, recursive: true });
-  await symlink("../invariant-reports", resolve(dist, "invariant-reports"), "dir");
-}
-
 function scheduleReload() {
   if (!autoReload) return;
   clearTimeout(reloadTimer);
@@ -124,33 +111,11 @@ function reloadPlugin() {
   };
 }
 
-await rm(dist, { force: true, recursive: true });
-await mkdir(dist, { recursive: true });
+await cleanDist();
 await copyStatic();
 startReportSink();
 
-const common = {
-  bundle: true,
-  format: "iife",
-  platform: "browser",
-  target: "es2022",
-  sourcemap: true,
-  logLevel: "info",
-  plugins: [reloadPlugin()]
-};
-
-const contexts = await Promise.all([
-  esbuild.context({
-    ...common,
-    entryPoints: [resolve(root, "src/content-script.ts")],
-    outfile: resolve(dist, "content-script.js")
-  }),
-  esbuild.context({
-    ...common,
-    entryPoints: [resolve(root, "src/page-probe.ts")],
-    outfile: resolve(dist, "page-probe.js")
-  })
-]);
+const contexts = await Promise.all(esbuildConfigs({ plugins: [reloadPlugin()] }).map((config) => esbuild.context(config)));
 
 for (const context of contexts) await context.watch();
 
