@@ -1,16 +1,10 @@
 export const MESSAGE_SOURCE = "dominion-navigator";
 
-export type ZoneOwnerSummary = {
-  index?: number;
-  name?: string;
-  isHero: boolean;
-};
-
 export type ZoneSummary = {
   index: number;
   zoneName: string;
   runtimeType: string;
-  owner?: ZoneOwnerSummary;
+  owner?: PlayerSummary;
   cardCount: number;
   stackCount: number;
   topCards: string[];
@@ -87,6 +81,19 @@ export type KnowledgeWindowCardSummary = {
   count: number;
 };
 
+export type KnowledgePileSummary = {
+  cards: KnowledgeWindowCardSummary[];
+  unknownCount: number;
+};
+
+export type DrawKnowledgeWindowPayload = KnowledgePileSummary & {
+  sourceZoneIndex: number;
+  playerName: string;
+  discardPile: KnowledgePileSummary;
+  excludedFromActiveDeck: KnowledgePileSummary;
+  entireDeck: KnowledgePileSummary;
+};
+
 export type ProbeStatusMessage = {
   source: typeof MESSAGE_SOURCE;
   type: "status";
@@ -108,32 +115,33 @@ export type ProbeMoveMessage = {
   payload: CardMoveSummary;
 };
 
+/** Page probe -> content script. */
 export type ProbeMessage = ProbeStatusMessage | ProbeSnapshotMessage | ProbeMoveMessage;
 
-export type ContentCommand =
-  | {
-      source: typeof MESSAGE_SOURCE;
-      type: "request-snapshot";
-    }
-  | {
-      source: typeof MESSAGE_SOURCE;
-      type: "show-draw-knowledge-window";
-      payload: {
-        sourceZoneIndex: number;
-        playerName: string;
-        cards: KnowledgeWindowCardSummary[];
-        unknownCount: number;
-        discardPile?: {
-          cards: KnowledgeWindowCardSummary[];
-          unknownCount: number;
-        };
-        excludedFromActiveDeck?: {
-          cards: KnowledgeWindowCardSummary[];
-          unknownCount: number;
-        };
-        entireDeck?: {
-          cards: KnowledgeWindowCardSummary[];
-          unknownCount: number;
-        };
-      };
-    };
+export type RequestSnapshotCommand = {
+  source: typeof MESSAGE_SOURCE;
+  type: "request-snapshot";
+};
+
+export type ShowDrawKnowledgeWindowCommand = {
+  source: typeof MESSAGE_SOURCE;
+  type: "show-draw-knowledge-window";
+  payload: DrawKnowledgeWindowPayload;
+};
+
+/** Content script -> page probe. */
+export type ContentCommand = RequestSnapshotCommand | ShowDrawKnowledgeWindowCommand;
+
+export type NavigatorMessage = ProbeMessage | ContentCommand;
+
+export function postNavigatorMessage(message: NavigatorMessage): void {
+  window.postMessage(message, window.location.origin);
+}
+
+/** Both sides share one window, so each listener also sees messages meant for the other side. */
+export function listenForNavigatorMessages(handler: (message: NavigatorMessage) => void): void {
+  window.addEventListener("message", (event: MessageEvent<NavigatorMessage | undefined>) => {
+    if (event.source !== window || event.data?.source !== MESSAGE_SOURCE) return;
+    handler(event.data);
+  });
+}

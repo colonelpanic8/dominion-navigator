@@ -4,3 +4,4 @@ releases/
 invariant-reports/
 *.log
 .playwright-cli/
+.worktrees/

@@ -37,12 +37,12 @@ function zone(index: number, zoneName: string, cardNames: string[], unknownCount
   };
 }
 
-function summaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
+function summaryZone(index: number, zoneName: string, topCards: string[] = [], owner: ZoneSummary["owner"] = player): ZoneSummary {
   return {
     index,
     zoneName,
     runtimeType: "Zone",
-    owner: player,
+    owner,
     cardCount: 0,
     stackCount: 0,
     topCards
@@ -50,39 +50,15 @@ function summaryZone(index: number, zoneName: string, topCards: string[] = []): 
 }
 
 function opponentSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: opponent,
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, opponent);
 }
 
 function thirdPlayerSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: thirdPlayer,
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, thirdPlayer);
 }
 
 function neutralSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: { index: -1, isHero: false },
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, { index: -1, isHero: false });
 }
 
 function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", startingDeck?: string[]): NavigatorSnapshot {
@@ -1053,7 +1029,7 @@ test("log-revealed topdeck converts one anonymous draw card into a known card", 
   );
 
   tracker.applyMove(move(opponentSummaryZone(10, "HandZone", ["Back"]), opponentSummaryZone(11, "DrawZone", ["Back"]), 1));
-  assert.equal(tracker.markKnownCardInZone(opponent, "DrawZone", "Estate"), true);
+  assert.equal(tracker.markKnownCardsInZone(opponent, "DrawZone", ["Estate"], { idempotent: false }), true);
 
   const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
   const draw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
@@ -1119,7 +1095,7 @@ test("named put-back removes stale matching location before adding destination c
     ]
   });
 
-  assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Sanctuary"), true);
+  assert.equal(tracker.markKnownCardsInZone(player, "DrawZone", ["Sanctuary"], { idempotent: false }), true);
   tracker.applyMove(moveWithNames(summaryZone(0, "HandZone", ["Courtyard"]), summaryZone(1, "InPlayZone", ["Courtyard"]), ["Courtyard"]));
   tracker.applyMove(move(summaryZone(2, "DrawZone", ["Back"]), summaryZone(0, "HandZone", ["Back"]), 3));
   tracker.applyMove({
@@ -1177,7 +1153,6 @@ test("draw snapshot identities are ignored after Courtyard draws named cards", (
   const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
   assert.deepEqual(draw?.knownCards, { Copper: 3, Estate: 1, Seer: 1 });
-  assert.equal(draw?.knownCards.Courtyard, undefined);
   assert.equal(draw?.unknownCount, 0);
   assert.equal(draw?.totalCount, 5);
   assert.equal(knowledge?.unknownLocatedCount, 0);
@@ -1243,7 +1218,6 @@ test("Courtyard draw and put-back loop keeps hero draw exact despite stale snaps
   const draw = knowledge?.zones.find((item) => item.zoneName === "DrawZone");
 
   assert.deepEqual(draw?.knownCards, { Copper: 2, Seer: 1 });
-  assert.equal(draw?.knownCards.Courtyard, undefined);
   assert.equal(draw?.unknownCount, 0);
   assert.equal(draw?.totalCount, 3);
   assert.deepEqual(knowledge?.unlocatedKnownCards, {});
@@ -1384,7 +1358,7 @@ test("marking the final unknown card updates confidence to observed when identit
   tracker.setLocationIdentityRepairEnabled(true);
   tracker.applySnapshot(snapshot([zone(1, "DrawZone", [], 1)]));
 
-  assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Silver"), true);
+  assert.equal(tracker.markKnownCardsInZone(player, "DrawZone", ["Silver"], { idempotent: false }), true);
 
   const [knowledge] = tracker.summary().players;
 

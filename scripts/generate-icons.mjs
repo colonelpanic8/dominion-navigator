@@ -2,25 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
+import { crc32 } from "./lib/crc32.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = resolve(root, "icons");
 const sizes = [16, 32, 48, 128];
-
-const crcTable = new Uint32Array(256);
-for (let i = 0; i < 256; i += 1) {
-  let c = i;
-  for (let k = 0; k < 8; k += 1) {
-    c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  }
-  crcTable[i] = c >>> 0;
-}
-
-function crc32(buffer) {
-  let c = 0xffffffff;
-  for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
 
 function chunk(type, data) {
   const typeBuffer = Buffer.from(type, "ascii");

@@ -1,666 +1,82 @@
+import { chromeApi } from "./content/environment";
+import { InvariantReporter } from "./content/invariants";
+import { buildDrawKnowledgeWindowPayload, clickedKnowledgeZone, heroDrawZone } from "./content/knowledge-window";
+import { LogKnowledgeWatcher } from "./content/log-watcher";
+import { createOverlay } from "./content/overlay";
+import {
+  loadPersistedState,
+  persistState,
+  snapshotHasRestorableIdentity,
+  StoredNavigatorState,
+  storedStateMatchesSnapshot
+} from "./content/persistence";
+import { DeckKnowledgeTracker, KnowledgeSummary } from "./knowledge";
 import {
   CardMoveSummary,
-  ContentCommand,
-  KnowledgeWindowCardSummary,
+  listenForNavigatorMessages,
   MESSAGE_SOURCE,
   NavigatorSnapshot,
-  ProbeMessage,
-  ZoneDetail,
-  ZoneSummary
+  postNavigatorMessage,
+  ZoneDetail
 } from "./messages";
-import {
-  CardCounter,
-  DeckKnowledgeTracker,
-  KnowledgeSummary,
-  PlayerDeckKnowledge,
-  SerializedDeckKnowledgeTracker,
-  ZoneCountReconciliation,
-  ZoneKnowledge
-} from "./knowledge";
-import { parseReactionLog, parseRevealedHandLog, parseTopdeckLog } from "./log-parser";
-import { samePlayerIdentity, shouldResolveTopdeckFromLog } from "./topdeck-tracking";
+import { AnonymousTopdeckQueue } from "./topdeck-tracking";
 
-type RuntimeWithChrome = typeof globalThis & {
-  chrome?: {
-    runtime?: {
-      getURL?: (path: string) => string;
-      lastError?: { message?: string };
-    };
-    storage?: {
-      local?: {
-        get?: (keys: string | string[] | Record<string, unknown>, callback: (items: Record<string, unknown>) => void) => void;
-        set?: (items: Record<string, unknown>, callback?: () => void) => void;
-        remove?: (keys: string | string[], callback?: () => void) => void;
-      };
-    };
-  };
-};
+const RECENT_MOVE_LIMIT = 30;
+const RESIZE_SNAPSHOT_DELAY_MS = 150;
+const IDLE_SNAPSHOT_INTERVAL_MS = 2000;
 
-type SnapshotIdentity = {
-  href: string;
-  gameNumber?: string;
-  players: string[];
-  setupCards: string[];
-  startingDeck: string[];
-  turnNumber?: number;
-};
-
-type StoredNavigatorState = {
-  version: 1;
-  savedAt: string;
-  identity: SnapshotIdentity;
-  tracker: SerializedDeckKnowledgeTracker;
-  recentMoves: CardMoveSummary[];
-};
-
-type CountInvariantViolation = {
-  kind: "zone-count" | "zone-group-count";
-  player: ZoneSummary["owner"];
-  zoneKey?: string;
-  zoneName?: string;
-  zoneNames?: string[];
-  trackedCount: number;
-  observedCount: number;
-};
-
-type StoredInvariantReport = {
-  version: 1;
-  id: string;
-  gameId: string;
-  fingerprint: string;
-  capturedAt: string;
-  href: string;
-  gameNumber?: string;
-  reason: string;
-  activeTurn?: NavigatorSnapshot["activeTurn"];
-  event?: CardMoveSummary | NavigatorSnapshot;
-  violations: CountInvariantViolation[];
-  repairs: ZoneCountReconciliation[];
-  beforeSummary: KnowledgeSummary;
-  afterSummary: KnowledgeSummary;
-  latestSnapshot?: NavigatorSnapshot;
-  recentMoves: CardMoveSummary[];
-};
-
-const runtime = globalThis as RuntimeWithChrome;
-
-let latestSnapshot: NavigatorSnapshot | undefined;
-const recentMoves: CardMoveSummary[] = [];
-const recentAnonymousTopdecks: Array<{ owner?: ZoneSummary["owner"]; count: number; capturedAtMs: number }> = [];
-const seenLogLines = new WeakSet<Element>();
-let pendingLogLineFirstSeen = new WeakMap<Element, number>();
 const tracker = new DeckKnowledgeTracker();
-let resizeSnapshotTimer: number | undefined;
-let pendingHeroDrawWindowOpen = false;
+const topdecks = new AnonymousTopdeckQueue();
+const recentMoves: CardMoveSummary[] = [];
+let latestSnapshot: NavigatorSnapshot | undefined;
 let persistedState: StoredNavigatorState | undefined;
 let restoredPersistedState = false;
-let logObserverReady = false;
-const activeInvariantFingerprints = new Set<string>();
+let pendingHeroDrawWindowOpen = false;
+let resizeSnapshotTimer: number | undefined;
 
-const STORAGE_KEY_PREFIX = "dominion-navigator:knowledge:v4:";
-const INVARIANT_REPORTS_KEY_PREFIX = "dominion-navigator:invariant-reports:v1:";
-const INVARIANT_REPORT_SINK_URL = "http://127.0.0.1:9237/invariant-report";
-const MAX_INVARIANT_REPORTS = 20;
-const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
-const LOG_LINE_RETRY_MS = 5000;
-const EXACT_COUNT_ZONE_NAMES = new Set(["DrawZone", "HandZone"]);
+const overlay = createOverlay(
+  {
+    onRefresh: requestSnapshot,
+    onShowDrawWindow: showHeroDrawKnowledgeWindow,
+    onIdentityRepairChange: (enabled) => {
+      tracker.setLocationIdentityRepairEnabled(enabled);
+      refreshKnowledge();
+    }
+  },
+  { identityRepairEnabled: tracker.isLocationIdentityRepairEnabled() }
+);
 
-const root = document.createElement("section");
-root.id = "dominion-navigator-root";
-root.attachShadow({ mode: "open" });
-document.documentElement.appendChild(root);
+const invariants = new InvariantReporter(tracker, () => ({
+  latestSnapshot,
+  recentMoves: recentMoves.slice(-RECENT_MOVE_LIMIT)
+}));
 
-const shadow = root.shadowRoot!;
-shadow.innerHTML = `
-  <style>
-    :host { all: initial; }
-    .panel {
-      position: fixed;
-      right: 12px;
-      top: 72px;
-      z-index: 2147483647;
-      width: 300px;
-      max-height: calc(100vh - 96px);
-      overflow: auto;
-      box-sizing: border-box;
-      padding: 10px;
-      border: 1px solid rgba(255,255,255,.32);
-      background: rgba(15, 18, 22, .92);
-      color: #f5f5f5;
-      font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      box-shadow: 0 10px 28px rgba(0,0,0,.35);
-      border-radius: 6px;
-    }
-    .panel.collapsed {
-      right: 0;
-      width: auto;
-      max-height: none;
-      overflow: visible;
-      padding: 0;
-      border-right: 0;
-      border-radius: 6px 0 0 6px;
-    }
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .panel.collapsed .header {
-      margin-bottom: 0;
-    }
-    .panel.collapsed .title,
-    .panel.collapsed #refresh {
-      display: none;
-    }
-    .panel.collapsed #toggle {
-      width: 32px;
-      height: 32px;
-      min-width: 32px;
-      border-width: 0 0 0 1px;
-      border-radius: 6px 0 0 6px;
-      background: rgba(15, 18, 22, .94);
-      box-shadow: 0 6px 18px rgba(0,0,0,.32);
-    }
-    .title {
-      font-weight: 700;
-      font-size: 13px;
-    }
-    button {
-      all: unset;
-      cursor: pointer;
-      box-sizing: border-box;
-      min-width: 26px;
-      height: 24px;
-      display: inline-grid;
-      place-items: center;
-      border: 1px solid rgba(255,255,255,.28);
-      border-radius: 4px;
-      background: rgba(255,255,255,.08);
-      color: #fff;
-      font-weight: 700;
-    }
-    .text-button {
-      min-width: 0;
-      width: 100%;
-      padding: 0 8px;
-      justify-content: center;
-      font-size: 12px;
-    }
-    button:hover { background: rgba(255,255,255,.16); }
-    button:disabled {
-      cursor: default;
-      opacity: .45;
-    }
-    button:disabled:hover { background: rgba(255,255,255,.08); }
-    .setting {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
-      color: #dce2ea;
-    }
-    .setting input {
-      accent-color: #8fb8ff;
-      width: 14px;
-      height: 14px;
-      margin: 0;
-    }
-    .meta {
-      color: #b9c0c9;
-      margin-bottom: 8px;
-    }
-    .actions {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-    .zone {
-      border-top: 1px solid rgba(255,255,255,.14);
-      padding: 7px 0;
-    }
-    .zone-title {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      font-weight: 650;
-      margin-bottom: 4px;
-    }
-    .title-actions {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .cards {
-      color: #dce2ea;
-      overflow-wrap: anywhere;
-    }
-    .muted { color: #8f99a6; }
-    .moves {
-      margin-top: 8px;
-      border-top: 1px solid rgba(255,255,255,.18);
-      padding-top: 8px;
-    }
-    .knowledge {
-      margin-top: 8px;
-      border-top: 1px solid rgba(255,255,255,.18);
-      padding-top: 8px;
-    }
-    .player {
-      padding: 7px 0;
-      border-top: 1px solid rgba(255,255,255,.12);
-    }
-    .player:first-of-type { border-top: 0; }
-    .player-name {
-      font-weight: 650;
-      margin-bottom: 4px;
-    }
-    .line {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      color: #dce2ea;
-      margin-top: 3px;
-    }
-    .line-stacked {
-      display: block;
-    }
-    .line span:first-child {
-      color: #aeb8c5;
-      white-space: nowrap;
-    }
-    .line-stacked span:first-child {
-      display: block;
-      white-space: normal;
-    }
-    .line-stacked b {
-      display: block;
-      margin-top: 2px;
-      text-align: left;
-    }
-    .move {
-      margin-top: 5px;
-      color: #dce2ea;
-    }
-    .hidden { display: none; }
-  </style>
-  <div class="panel collapsed">
-    <div class="header">
-      <div class="title">Dominion Navigator</div>
-      <div>
-        <button id="refresh" title="Refresh snapshot">↻</button>
-        <button id="toggle" title="Open navigator">+</button>
-      </div>
-    </div>
-    <div id="body" class="hidden">
-      <div class="meta" id="meta">Waiting for game model...</div>
-      <label class="setting" title="Allow visible zone evidence to identify anonymous owned cards.">
-        <span>Identity repair</span>
-        <input id="identity-repair" type="checkbox" />
-      </label>
-      <div class="actions">
-        <button id="show-deck" class="text-button" title="Open your draw pile knowledge in a Dominion card window">Open Draw Window</button>
-      </div>
-      <div class="knowledge">
-        <div class="zone-title"><span>Knowledge Model</span></div>
-        <div id="knowledge"><span class="muted">No deck knowledge yet.</span></div>
-      </div>
-      <div id="zones"></div>
-      <div class="moves">
-        <div class="zone-title"><span>Recent Moves</span></div>
-        <div id="moves"><span class="muted">No moves captured yet.</span></div>
-      </div>
-    </div>
-  </div>
-`;
-
-const bodyElement = shadow.querySelector<HTMLElement>("#body")!;
-const panelElement = shadow.querySelector<HTMLElement>(".panel")!;
-const metaElement = shadow.querySelector<HTMLElement>("#meta")!;
-const zonesElement = shadow.querySelector<HTMLElement>("#zones")!;
-const movesElement = shadow.querySelector<HTMLElement>("#moves")!;
-const knowledgeElement = shadow.querySelector<HTMLElement>("#knowledge")!;
-const showDeckButton = shadow.querySelector<HTMLButtonElement>("#show-deck")!;
-const toggleButton = shadow.querySelector<HTMLButtonElement>("#toggle")!;
-const refreshButton = shadow.querySelector<HTMLButtonElement>("#refresh")!;
-const identityRepairInput = shadow.querySelector<HTMLInputElement>("#identity-repair")!;
-
-toggleButton.addEventListener("click", () => {
-  const isCollapsed = panelElement.classList.toggle("collapsed");
-  bodyElement.classList.toggle("hidden", isCollapsed);
-  toggleButton.textContent = isCollapsed ? "+" : "-";
-  toggleButton.title = isCollapsed ? "Open navigator" : "Collapse navigator";
-});
-
-refreshButton.addEventListener("click", requestSnapshot);
-showDeckButton.addEventListener("click", showHeroDrawKnowledgeWindow);
-
-identityRepairInput.checked = tracker.isLocationIdentityRepairEnabled();
-identityRepairInput.addEventListener("change", () => {
-  tracker.setLocationIdentityRepairEnabled(identityRepairInput.checked);
-  const summary = tracker.summary();
-  renderKnowledge(summary);
-  if (latestSnapshot) renderZones(summary, latestSnapshot);
-  if (latestSnapshot) persistState(latestSnapshot);
+const logWatcher = new LogKnowledgeWatcher({
+  tracker,
+  topdecks,
+  latestSnapshot: () => latestSnapshot,
+  onKnowledgeChanged: () => refreshKnowledge()
 });
 
 function requestSnapshot(): void {
-  const command: ContentCommand = {
-    source: MESSAGE_SOURCE,
-    type: "request-snapshot"
-  };
-  window.postMessage(command, window.location.origin);
+  postNavigatorMessage({ source: MESSAGE_SOURCE, type: "request-snapshot" });
 }
 
-function storageKey(): string {
-  return `${STORAGE_KEY_PREFIX}${window.location.href}`;
+function persist(snapshot: NavigatorSnapshot): void {
+  persistState(snapshot, tracker, recentMoves.slice(-RECENT_MOVE_LIMIT));
 }
 
-function invariantReportsKey(gameId = currentReportGameId()): string {
-  return `${INVARIANT_REPORTS_KEY_PREFIX}${gameId}:${window.location.href}`;
-}
-
-function currentGameNumber(): string | undefined {
-  return document.body?.innerText.match(/Game #(\d+)/)?.[1];
-}
-
-function currentReportGameId(snapshot = latestSnapshot): string {
-  const gameNumber = currentGameNumber();
-  if (gameNumber) return `dominion-game-${gameNumber}`;
-  if (snapshot?.gameInstanceId) return snapshot.gameInstanceId;
-  return "unknown-game";
-}
-
-function snapshotIdentity(snapshot: NavigatorSnapshot): SnapshotIdentity {
-  const gameNumber = currentGameNumber();
-  return {
-    href: window.location.href,
-    ...(gameNumber ? { gameNumber } : {}),
-    players: snapshot.players
-      .map((player) => `${player.index ?? ""}:${player.name ?? ""}:${player.isHero ? "hero" : "other"}`)
-      .sort((a, b) => a.localeCompare(b)),
-    setupCards: [...(snapshot.setupCards ?? [])].sort((a, b) => a.localeCompare(b)),
-    startingDeck: [...(snapshot.startingDeck ?? [])].sort((a, b) => a.localeCompare(b)),
-    ...(snapshot.activeTurn?.turnNumber !== undefined ? { turnNumber: snapshot.activeTurn.turnNumber } : {})
-  };
-}
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((item, index) => item === b[index]);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object");
-}
-
-function isStoredNavigatorState(value: unknown): value is StoredNavigatorState {
-  if (!isObject(value)) return false;
-  return (
-    value.version === 1 &&
-    typeof value.savedAt === "string" &&
-    isObject(value.identity) &&
-    isObject(value.tracker) &&
-    value.tracker.version === 1 &&
-    Array.isArray(value.recentMoves)
-  );
-}
-
-function isStoredInvariantReport(value: unknown): value is StoredInvariantReport {
-  return (
-    isObject(value) &&
-    value.version === 1 &&
-    typeof value.id === "string" &&
-    typeof value.gameId === "string" &&
-    typeof value.fingerprint === "string" &&
-    Array.isArray(value.violations)
-  );
-}
-
-function storedStateMatchesSnapshot(state: StoredNavigatorState, snapshot: NavigatorSnapshot): boolean {
-  const identity = snapshotIdentity(snapshot);
-  const savedAt = Date.parse(state.savedAt);
-  if (!Number.isFinite(savedAt) || Date.now() - savedAt > MAX_RESTORE_AGE_MS) return false;
-  if (state.identity.href !== identity.href) return false;
-  if (state.identity.gameNumber !== identity.gameNumber) return false;
-  if (!arraysEqual(state.identity.players, identity.players)) return false;
-  if (!arraysEqual(state.identity.setupCards, identity.setupCards)) return false;
-  if (!arraysEqual(state.identity.startingDeck, identity.startingDeck)) return false;
-  if (state.identity.turnNumber !== undefined && identity.turnNumber !== undefined && identity.turnNumber < state.identity.turnNumber) return false;
-  return true;
-}
-
-function snapshotHasRestorableIdentity(snapshot: NavigatorSnapshot): boolean {
-  return currentGameNumber() !== undefined && snapshot.players.length > 0 && (snapshot.setupCards?.length ?? 0) > 0;
-}
-
-async function loadPersistedState(): Promise<StoredNavigatorState | undefined> {
-  const localStorage = runtime.chrome?.storage?.local;
-  if (!localStorage?.get) return undefined;
-
-  return new Promise((resolve) => {
-    localStorage.get!(storageKey(), (items) => {
-      if (runtime.chrome?.runtime?.lastError) {
-        resolve(undefined);
-        return;
-      }
-
-      const stored = items[storageKey()];
-      resolve(isStoredNavigatorState(stored) ? stored : undefined);
-    });
-  });
-}
-
-function persistState(snapshot: NavigatorSnapshot): void {
-  const localStorage = runtime.chrome?.storage?.local;
-  if (!localStorage?.set) return;
-  if (!snapshotHasRestorableIdentity(snapshot)) return;
-
-  const state: StoredNavigatorState = {
-    version: 1,
-    savedAt: new Date().toISOString(),
-    identity: snapshotIdentity(snapshot),
-    tracker: tracker.serialize(),
-    recentMoves: recentMoves.slice(-30)
-  };
-
-  localStorage.set({ [storageKey()]: state });
-}
-
-function reportId(capturedAt: string): string {
-  const timestamp = capturedAt.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-|-$/g, "");
-  return `${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function hashString(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function playerIdentityKey(player: ZoneSummary["owner"] | PlayerDeckKnowledge["player"] | undefined): string {
-  if (!player) return "unknown";
-  if (player.index !== undefined) return `index:${player.index}`;
-  return `name:${player.name ?? "unknown"}`;
-}
-
-function observedExactCountZonesFromSnapshot(snapshot: NavigatorSnapshot): ZoneSummary[] {
-  return snapshot.playerZones.filter((zone) => EXACT_COUNT_ZONE_NAMES.has(zone.zoneName));
-}
-
-function observedExactCountZonesFromMove(move: CardMoveSummary): ZoneSummary[] {
-  if (move.phase !== "after") return [];
-  const zones = [move.from, move.to].filter(
-    (zone): zone is ZoneSummary => Boolean(zone?.owner && EXACT_COUNT_ZONE_NAMES.has(zone.zoneName))
-  );
-  const byKey = new Map<string, ZoneSummary>();
-  for (const zone of zones) byKey.set(`${zone.index}:${zone.zoneName}`, zone);
-  return [...byKey.values()];
-}
-
-function trackedPlayerForObservedZone(summary: KnowledgeSummary, zone: ZoneSummary): PlayerDeckKnowledge | undefined {
-  return summary.players.find((player) => samePlayer(zone.owner, player.player));
-}
-
-function countInvariantViolations(summary: KnowledgeSummary, observedZones: ZoneSummary[]): CountInvariantViolation[] {
-  const violations: CountInvariantViolation[] = [];
-  const groups = new Map<
-    string,
-    {
-      player: ZoneSummary["owner"];
-      zoneNames: Set<string>;
-      trackedCount: number;
-      observedCount: number;
-    }
-  >();
-
-  for (const observed of observedZones) {
-    const player = trackedPlayerForObservedZone(summary, observed);
-    const key = `${observed.index}:${observed.zoneName}`;
-    const trackedCount = player?.zones.find((zone) => zone.zoneKey === key)?.totalCount ?? 0;
-    if (trackedCount !== observed.cardCount) {
-      violations.push({
-        kind: "zone-count",
-        player: observed.owner,
-        zoneKey: key,
-        zoneName: observed.zoneName,
-        trackedCount,
-        observedCount: observed.cardCount
-      });
-    }
-
-    const groupKey = playerIdentityKey(observed.owner);
-    const group = groups.get(groupKey) ?? {
-      player: observed.owner,
-      zoneNames: new Set<string>(),
-      trackedCount: 0,
-      observedCount: 0
-    };
-    group.zoneNames.add(observed.zoneName);
-    group.trackedCount += trackedCount;
-    group.observedCount += observed.cardCount;
-    groups.set(groupKey, group);
-  }
-
-  for (const group of groups.values()) {
-    if (!group.zoneNames.has("DrawZone") || !group.zoneNames.has("HandZone")) continue;
-    if (group.trackedCount === group.observedCount) continue;
-    violations.push({
-      kind: "zone-group-count",
-      player: group.player,
-      zoneNames: [...group.zoneNames].sort((a, b) => a.localeCompare(b)),
-      trackedCount: group.trackedCount,
-      observedCount: group.observedCount
-    });
-  }
-
-  return violations;
-}
-
-function invariantFingerprint(gameId: string, violations: CountInvariantViolation[]): string {
-  const normalized = violations
-    .map((violation) => ({
-      kind: violation.kind,
-      player: playerIdentityKey(violation.player),
-      zoneKey: violation.zoneKey ?? "",
-      zoneName: violation.zoneName ?? "",
-      zoneNames: [...(violation.zoneNames ?? [])].sort((a, b) => a.localeCompare(b)),
-      trackedCount: violation.trackedCount,
-      observedCount: violation.observedCount
-    }))
-    .sort(
-      (a, b) =>
-        a.kind.localeCompare(b.kind) ||
-        a.player.localeCompare(b.player) ||
-        a.zoneKey.localeCompare(b.zoneKey) ||
-        a.zoneName.localeCompare(b.zoneName)
-    );
-  return hashString(JSON.stringify({ gameId, normalized }));
-}
-
-function appendInvariantReport(report: StoredInvariantReport): void {
-  console.warn("Dominion Navigator invariant report", report);
-  void mirrorInvariantReportToDevSink(report);
-
-  const localStorage = runtime.chrome?.storage?.local;
-  if (!localStorage?.get || !localStorage.set) return;
-  const key = invariantReportsKey(report.gameId);
-  localStorage.get(key, (items) => {
-    const existing = Array.isArray(items[key]) ? items[key].filter(isStoredInvariantReport) : [];
-    const next = [...existing, report].slice(-MAX_INVARIANT_REPORTS);
-    localStorage.set?.({ [key]: next });
-  });
-}
-
-async function mirrorInvariantReportToDevSink(report: StoredInvariantReport): Promise<void> {
-  try {
-    await fetch(INVARIANT_REPORT_SINK_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(report)
-    });
-  } catch {
-    // The dev sink only exists while `npm run dev` is running.
-  }
-}
-
-function reportCountInvariants(
-  reason: string,
-  observedZones: ZoneSummary[],
-  beforeSummary: KnowledgeSummary,
-  event?: CardMoveSummary | NavigatorSnapshot
-): { repairs: ZoneCountReconciliation[]; summary: KnowledgeSummary } {
-  if (observedZones.length === 0) return { repairs: [], summary: beforeSummary };
-
-  const violations = countInvariantViolations(beforeSummary, observedZones);
-  if (violations.length === 0) {
-    activeInvariantFingerprints.clear();
-    return { repairs: [], summary: beforeSummary };
-  }
-
-  const repairs = tracker.reconcileObservedZoneCounts(observedZones);
-  const afterSummary = tracker.summary();
-  const capturedAt = new Date().toISOString();
-  const gameNumber = currentGameNumber();
-  const gameId = currentReportGameId();
-  const fingerprint = invariantFingerprint(gameId, violations);
-  if (activeInvariantFingerprints.has(fingerprint)) return { repairs, summary: afterSummary };
-  activeInvariantFingerprints.add(fingerprint);
-
-  appendInvariantReport({
-    version: 1,
-    id: reportId(capturedAt),
-    gameId,
-    fingerprint,
-    capturedAt,
-    href: window.location.href,
-    ...(gameNumber ? { gameNumber } : {}),
-    reason,
-    ...(latestSnapshot?.activeTurn ? { activeTurn: latestSnapshot.activeTurn } : {}),
-    ...(event ? { event } : {}),
-    violations,
-    repairs,
-    beforeSummary,
-    afterSummary,
-    ...(latestSnapshot ? { latestSnapshot } : {}),
-    recentMoves: recentMoves.slice(-30)
-  });
-  return { repairs, summary: afterSummary };
+/** Re-renders tracker-derived views and persists the tracker. */
+function refreshKnowledge(summary: KnowledgeSummary = tracker.summary()): void {
+  overlay.renderKnowledge(summary);
+  if (!latestSnapshot) return;
+  overlay.renderZones(summary, latestSnapshot);
+  persist(latestSnapshot);
 }
 
 function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean {
   if (restoredPersistedState) return false;
-  if (!persistedState) {
-    restoredPersistedState = true;
-    return false;
-  }
-  if (persistedState.identity.gameNumber === undefined) {
+  if (!persistedState || persistedState.identity.gameNumber === undefined) {
     restoredPersistedState = true;
     return false;
   }
@@ -669,537 +85,23 @@ function restorePersistedStateForSnapshot(snapshot: NavigatorSnapshot): boolean 
   restoredPersistedState = true;
 
   tracker.restoreForSnapshot(persistedState.tracker, snapshot);
-  recentMoves.splice(0, recentMoves.length, ...persistedState.recentMoves.slice(-30));
-  renderMoves();
+  recentMoves.splice(0, recentMoves.length, ...persistedState.recentMoves.slice(-RECENT_MOVE_LIMIT));
+  overlay.renderMoves(recentMoves);
   return true;
 }
 
-function zoneCards(zone: ZoneDetail): string {
-  const visibleCards = zone.stacks.flatMap((stack) => stack.cards.map((card) => card.name));
-  const anonymousCount = zone.stacks.reduce((total, stack) => total + stack.anonymousCards, 0);
-  const parts: string[] = [];
-  if (visibleCards.length) parts.push(visibleCards.join(", "));
-  if (anonymousCount) parts.push(`${anonymousCount} unknown`);
-  return parts.join("; ") || "empty";
-}
-
-function trackedZoneCards(zone: ZoneKnowledge): string {
-  const knownText = formatCounter(zone.knownCards);
-  const unknownText = zone.unknownCount > 0 ? `${zone.unknownCount} unknown` : "";
-  const ambiguousText = zone.ambiguousCount > 0 ? `${zone.ambiguousCount} location-ambiguous` : "";
-  return [knownText, ambiguousText, unknownText].filter(Boolean).join("; ") || "empty";
-}
-
-function playerMatches(a: PlayerDeckKnowledge["player"], b: NavigatorSnapshot["hero"]): boolean {
-  if (!b) return false;
-  if (a.index !== undefined && b.index !== undefined) return a.index === b.index;
-  return a.name !== undefined && a.name === b.name;
-}
-
-function samePlayer(a: ZoneSummary["owner"] | undefined, b: NavigatorSnapshot["players"][number] | undefined): boolean {
-  return samePlayerIdentity(a, b);
-}
-
-function recordAnonymousTopdeck(move: CardMoveSummary): void {
-  if (!shouldResolveTopdeckFromLog(move)) return;
-  recentAnonymousTopdecks.push({ owner: move.to?.owner, count: move.cardIdsAfterMoving.length, capturedAtMs: Date.now() });
-  while (recentAnonymousTopdecks.length > 12) recentAnonymousTopdecks.shift();
-}
-
-function playerForLogToken(token: string): NavigatorSnapshot["players"][number] | undefined {
-  const players = latestSnapshot?.players ?? [];
-  const exactMatches = players.filter((player) => player.name === token);
-  if (exactMatches.length === 1) return exactMatches[0];
-
-  const prefixMatches = players.filter((player) => player.name?.startsWith(token));
-  return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
-}
-
-function consumeRecentAnonymousTopdeck(player: NavigatorSnapshot["players"][number], count: number): boolean {
-  const now = Date.now();
-  while (recentAnonymousTopdecks.length > 0 && now - recentAnonymousTopdecks[0]!.capturedAtMs > 5000) {
-    recentAnonymousTopdecks.shift();
-  }
-
-  let available = 0;
-  for (const item of recentAnonymousTopdecks) {
-    if (!samePlayer(item.owner, player)) continue;
-    available += item.count;
-    if (available >= count) break;
-  }
-  if (available < count) return false;
-
-  let remaining = count;
-  for (let index = 0; index < recentAnonymousTopdecks.length && remaining > 0; index += 1) {
-    const item = recentAnonymousTopdecks[index]!;
-    if (!samePlayer(item.owner, player)) continue;
-    const consumed = Math.min(item.count, remaining);
-    item.count -= consumed;
-    remaining -= consumed;
-    if (item.count === 0) {
-      recentAnonymousTopdecks.splice(index, 1);
-      index -= 1;
-    }
-  }
-  return true;
-}
-
-function applyKnownCardInZoneFromLogText(text: string): boolean {
-  const topdeck = parseTopdeckLog(text, knownCardNamesForLogParsing());
-  if (!topdeck) return false;
-  const player = playerForLogToken(topdeck.playerToken);
-  if (!player) return false;
-  const cardNames = topdeck.cards;
-  if (cardNames.length === 0) return false;
-  if (!consumeRecentAnonymousTopdeck(player, cardNames.length)) return false;
-  return tracker.markKnownCardsInZone(player, "DrawZone", cardNames, { idempotent: false });
-}
-
-function knownCardNamesForLogParsing(): string[] {
-  const names = new Set<string>([...(latestSnapshot?.setupCards ?? []), ...(latestSnapshot?.startingDeck ?? [])]);
-  for (const player of tracker.summary().players) {
-    for (const cardName of Object.keys(player.totalKnownOwned)) names.add(cardName);
-    for (const zone of player.zones) {
-      for (const cardName of Object.keys(zone.knownCards)) names.add(cardName);
-    }
-  }
-  return [...names];
-}
-
-function applyKnownHandFromLogText(text: string): boolean {
-  const revealedHand = parseRevealedHandLog(text, knownCardNamesForLogParsing());
-  if (!revealedHand) return false;
-  const player = playerForLogToken(revealedHand.playerToken);
-  if (!player) return false;
-
-  return tracker.markExactKnownCardsInZone(player, "HandZone", revealedHand.cards);
-}
-
-function applyKnownReactionFromLogText(text: string): boolean {
-  const reaction = parseReactionLog(text, knownCardNamesForLogParsing());
-  if (!reaction) return false;
-  const player = playerForLogToken(reaction.playerToken);
-  if (!player) return false;
-  return tracker.markKnownCardsInZone(player, "HandZone", [reaction.card]);
-}
-
-function playerDisplayName(player: PlayerDeckKnowledge["player"] | ZoneSummary["owner"] | undefined): string {
-  return player?.name ?? (player?.index !== undefined ? `Player ${player.index}` : "unknown");
-}
-
-function playerRole(player: PlayerDeckKnowledge["player"]): string {
-  return player.isHero ? "you" : "other player";
-}
-
-function zoneDisplayName(zone: Pick<ZoneSummary, "zoneName" | "owner">): string {
-  if (!zone.owner || zone.owner.index === undefined || zone.owner.index < 0) return zone.zoneName;
-  const owner = zone.owner.isHero ? "your" : playerDisplayName(zone.owner);
-  return `${owner} ${zone.zoneName}`;
-}
-
-function rawZoneIsEventSourced(zone: ZoneDetail): boolean {
-  return zone.zoneName === "DiscardZone";
-}
-
-function total(counter: CardCounter): number {
-  return Object.values(counter).reduce((sum, count) => sum + count, 0);
-}
-
-function formatCounter(counter: CardCounter): string {
-  const entries = Object.entries(counter).sort(([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName));
-  if (entries.length === 0) return "";
-  return entries.map(([name, count]) => `${count} ${name}`).join(", ");
-}
-
-function prioritizedZones(zones: ZoneKnowledge[]): ZoneKnowledge[] {
-  const order = ["HandZone", "InPlayZone", "DiscardZone", "DrawZone", "TavernZone", "ExileZone", "SetAsideZone", "RevealZone"];
-  return [...zones].sort((a, b) => {
-    const aIndex = order.indexOf(a.zoneName);
-    const bIndex = order.indexOf(b.zoneName);
-    return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex) || a.zoneKey.localeCompare(b.zoneKey);
+function showDrawKnowledgeWindow(zone: ZoneDetail, snapshot: NavigatorSnapshot): void {
+  postNavigatorMessage({
+    source: MESSAGE_SOURCE,
+    type: "show-draw-knowledge-window",
+    payload: buildDrawKnowledgeWindowPayload(zone, tracker.summary(), snapshot)
   });
 }
 
-function renderPlayerKnowledge(player: PlayerDeckKnowledge): HTMLElement {
-  const item = document.createElement("div");
-  item.className = "player";
-
-  const name = document.createElement("div");
-  name.className = "player-name";
-  const confidence = player.confidence === "observed" ? "observed" : "partial";
-  name.textContent = `${playerDisplayName(player.player)} · ${playerRole(player.player)} · ${confidence}`;
-  item.append(name);
-
-  item.append(renderKnowledgeLine("Known owned", String(total(player.totalKnownOwned))));
-  const ownedText = formatCounter(player.totalKnownOwned);
-  if (ownedText) item.append(renderKnowledgeLine("Owned cards", ownedText));
-  if (player.totalUnknownOwned > 0) {
-    item.append(renderKnowledgeLine("Owned, unknown identity", String(player.totalUnknownOwned)));
-  }
-
-  for (const zone of prioritizedZones(player.zones)) {
-    item.append(renderKnowledgeLine(zone.zoneName, trackedZoneCards(zone)));
-  }
-
-  for (const group of player.ambiguousLocationGroups) {
-    item.append(renderKnowledgeLine(`${group.zoneNames.join(" + ")} identities`, formatCounter(group.knownCards), true));
-  }
-
-  for (const group of player.locationCandidateGroups) {
-    const outsideText = group.outsideCount > 0 ? `; ${group.outsideCount} not in those slots` : "";
-    item.append(
-      renderKnowledgeLine(
-        `${group.zoneNames.join(" + ")} candidates`,
-        `${group.totalCount} of ${formatCounter(group.knownCards)}${outsideText}`,
-        true
-      )
-    );
-  }
-
-  const unlocatedText = formatCounter(player.unlocatedKnownCards);
-  if (unlocatedText) {
-    item.append(renderKnowledgeLine(player.unknownLocatedCount > 0 ? "Known, uncertain location" : "Known, unlocated", unlocatedText));
-  }
-
-  if (player.unknownLocatedCount > 0) {
-    item.append(renderKnowledgeLine("Located, unknown identity", String(player.unknownLocatedCount)));
-  }
-
-  return item;
-}
-
-function renderKnowledgeLine(labelText: string, valueText: string, stacked = false): HTMLElement {
-  const line = document.createElement("div");
-  line.className = stacked ? "line line-stacked" : "line";
-
-  const label = document.createElement("span");
-  label.textContent = labelText;
-
-  const value = document.createElement("b");
-  value.textContent = valueText;
-
-  line.append(label, value);
-  return line;
-}
-
-function renderKnowledge(summary: KnowledgeSummary): void {
-  if (summary.players.length === 0) {
-    knowledgeElement.innerHTML = '<span class="muted">No deck knowledge yet.</span>';
-    return;
-  }
-
-  knowledgeElement.replaceChildren(
-    ...[...summary.players]
-      .sort((a, b) => Number(b.player.isHero) - Number(a.player.isHero) || (a.player.index ?? 999) - (b.player.index ?? 999))
-      .map(renderPlayerKnowledge)
-  );
-}
-
-function renderZones(summary: KnowledgeSummary, snapshot: NavigatorSnapshot): void {
-  const heroKnowledge = summary.players.find((player) => playerMatches(player.player, snapshot.hero));
-  const trackedByKey = new Map((heroKnowledge?.zones ?? []).map((zone) => [zone.zoneKey, zone]));
-  const renderedKeys = new Set<string>();
-  const zoneRows: ZoneRenderRow[] = [];
-
-  for (const rawZone of snapshot.heroZones) {
-    const key = `${rawZone.index}:${rawZone.zoneName}`;
-    const trackedZone = trackedByKey.get(key);
-    renderedKeys.add(key);
-    appendZoneRenderRow(zoneRows, {
-      zoneName: zoneDisplayName(rawZone),
-      count: trackedZone?.totalCount ?? (rawZoneIsEventSourced(rawZone) ? 0 : rawZone.cardCount),
-      cardsText: trackedZone ? trackedZoneCards(trackedZone) : rawZoneIsEventSourced(rawZone) ? "empty" : zoneCards(rawZone)
-    });
-  }
-
-  for (const trackedZone of heroKnowledge?.zones ?? []) {
-    if (renderedKeys.has(trackedZone.zoneKey)) continue;
-    appendZoneRenderRow(zoneRows, {
-      zoneName: trackedZone.zoneName,
-      count: trackedZone.totalCount,
-      cardsText: trackedZoneCards(trackedZone)
-    });
-  }
-
-  zonesElement.replaceChildren(...zoneRows.map((row) => renderZoneItem(row.zoneName, row.count, row.cardsText)));
-}
-
-type ZoneRenderRow = {
-  zoneName: string;
-  count: number;
-  cardsText: string;
-};
-
-function appendZoneRenderRow(rows: ZoneRenderRow[], next: ZoneRenderRow): void {
-  const existingIndex = rows.findIndex((row) => row.zoneName === next.zoneName);
-  if (existingIndex === -1) {
-    rows.push(next);
-    return;
-  }
-
-  const existing = rows[existingIndex]!;
-  const existingEmpty = isEmptyZoneRenderRow(existing);
-  const nextEmpty = isEmptyZoneRenderRow(next);
-
-  if (nextEmpty) return;
-  if (existingEmpty) {
-    rows[existingIndex] = next;
-    return;
-  }
-
-  const duplicateCount = rows.filter((row) => row.zoneName === next.zoneName || row.zoneName.startsWith(`${next.zoneName} #`)).length + 1;
-  rows.push({ ...next, zoneName: `${next.zoneName} #${duplicateCount}` });
-}
-
-function isEmptyZoneRenderRow(row: ZoneRenderRow): boolean {
-  return row.count === 0 && row.cardsText === "empty";
-}
-
-function renderZoneItem(zoneName: string, count: number, cardsText: string): HTMLElement {
-  const item = document.createElement("div");
-  item.className = "zone";
-
-  const title = document.createElement("div");
-  title.className = "zone-title";
-
-  const name = document.createElement("span");
-  name.textContent = zoneName;
-
-  const countElement = document.createElement("span");
-  countElement.textContent = String(count);
-
-  const cards = document.createElement("div");
-  cards.className = "cards";
-  cards.textContent = cardsText;
-
-  title.append(name, countElement);
-  item.append(title, cards);
-  return item;
-}
-
-function zoneDetailKey(zone: Pick<ZoneDetail, "index" | "zoneName">): string {
-  return `${zone.index}:${zone.zoneName}`;
-}
-
-function boundsContainPoint(bounds: NonNullable<ZoneDetail["stacks"][number]["bounds"]>, x: number, y: number): boolean {
-  return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
-}
-
-function clickedKnowledgeZone(snapshot: NavigatorSnapshot, x: number, y: number): ZoneDetail | undefined {
-  const hits = snapshot.playerZones
-    .filter((zone) => zone.zoneName === "DrawZone" || zone.zoneName === "DiscardZone")
-    .flatMap((zone) =>
-      zone.stacks
-        .filter((stack) => stack.bounds && boundsContainPoint(stack.bounds, x, y))
-        .map((stack) => ({
-          zone,
-          zIndex: stack.bounds?.zIndex ?? 0,
-          area: (stack.bounds?.width ?? 0) * (stack.bounds?.height ?? 0)
-        }))
-    );
-
-  hits.sort((a, b) => b.zIndex - a.zIndex || a.area - b.area);
-  return hits[0]?.zone;
-}
-
-function knowledgeForZone(summary: KnowledgeSummary, zone: ZoneDetail): PlayerDeckKnowledge | undefined {
-  return summary.players.find((player) => samePlayer(zone.owner, player.player));
-}
-
-function counterToWindowCards(counter: CardCounter): KnowledgeWindowCardSummary[] {
-  return Object.entries(counter)
-    .filter(([, count]) => count > 0)
-    .sort(([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName))
-    .map(([name, count]) => ({ name, count }));
-}
-
-type KnowledgeWindowPileSummary = {
-  cards: KnowledgeWindowCardSummary[];
-  unknownCount: number;
-};
-
-function rawUnknownCount(zone: ZoneDetail): number {
-  return zone.stacks.reduce((total, stack) => total + stack.anonymousCards, 0);
-}
-
-function visibleCardCounter(zone: ZoneDetail): CardCounter {
-  const counter: CardCounter = {};
-  for (const stack of zone.stacks) {
-    for (const card of stack.cards) counter[card.name] = (counter[card.name] ?? 0) + 1;
-  }
-  return counter;
-}
-
-function trackedKnowledgeWindowCards(
-  trackedZone: ZoneKnowledge,
-  player: PlayerDeckKnowledge | undefined
-): KnowledgeWindowPileSummary {
-  const exactCards = counterToWindowCards(trackedZone.knownCards);
-  const candidateGroup = player?.locationCandidateGroups.find((group) => group.zoneKeys.includes(trackedZone.zoneKey));
-  const ambiguousGroup = player?.ambiguousLocationGroups.find((group) => group.zoneKeys.includes(trackedZone.zoneKey));
-  const candidateCards = counterToWindowCards(candidateGroup?.knownCards ?? ambiguousGroup?.knownCards ?? {});
-
-  if (exactCards.length > 0) {
-    return {
-      cards: exactCards,
-      unknownCount: trackedZone.unknownCount + trackedZone.ambiguousCount
-    };
-  }
-
-  if (candidateCards.length > 0) {
-    return {
-      cards: candidateCards,
-      unknownCount: 0
-    };
-  }
-
-  return {
-    cards: [],
-    unknownCount: trackedZone.unknownCount + trackedZone.ambiguousCount
-  };
-}
-
-function knowledgeWindowCardsForZone(zone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const player = knowledgeForZone(summary, zone);
-  const key = zoneDetailKey(zone);
-  const trackedZone = player?.zones.find((item) => item.zoneKey === key);
-  if (!trackedZone) {
-    return {
-      cards: counterToWindowCards(visibleCardCounter(zone)),
-      unknownCount: rawUnknownCount(zone)
-    };
-  }
-
-  return trackedKnowledgeWindowCards(trackedZone, player);
-}
-
-function addKnowledgeWindowCards(target: CardCounter, source: KnowledgeWindowCardSummary[]): void {
-  for (const item of source) target[item.name] = (target[item.name] ?? 0) + item.count;
-}
-
-function combineKnowledgeWindowPiles(piles: KnowledgeWindowPileSummary[]): KnowledgeWindowPileSummary {
-  const cards: CardCounter = {};
-  let unknownCount = 0;
-
-  for (const pile of piles) {
-    addKnowledgeWindowCards(cards, pile.cards);
-    unknownCount += pile.unknownCount;
-  }
-
-  return {
-    cards: counterToWindowCards(cards),
-    unknownCount
-  };
-}
-
-function combineTrackedZonesForKnowledgeWindow(zones: ZoneKnowledge[]): KnowledgeWindowPileSummary {
-  const cards: CardCounter = {};
-  let unknownCount = 0;
-
-  for (const zone of zones) {
-    for (const [name, count] of Object.entries(zone.knownCards)) cards[name] = (cards[name] ?? 0) + count;
-    unknownCount += zone.unknownCount + zone.ambiguousCount;
-  }
-
-  return {
-    cards: counterToWindowCards(cards),
-    unknownCount
-  };
-}
-
-function relatedPlayerZone(snapshot: NavigatorSnapshot | undefined, sourceZone: ZoneDetail, zoneName: string): ZoneDetail | undefined {
-  return snapshot?.playerZones
-    .filter((zone) => zone.zoneName === zoneName && samePlayer(zone.owner, sourceZone.owner))
-    .sort((a, b) => b.cardCount - a.cardCount || a.index - b.index)[0];
-}
-
-function drawKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const rawDrawZone = relatedPlayerZone(latestSnapshot, sourceZone, "DrawZone");
-  if (rawDrawZone) return knowledgeWindowCardsForZone(rawDrawZone, summary);
-
-  const player = knowledgeForZone(summary, sourceZone);
-  const trackedDrawZone = player?.zones
-    .filter((zone) => zone.zoneName === "DrawZone")
-    .sort((a, b) => b.totalCount - a.totalCount || a.zoneKey.localeCompare(b.zoneKey))[0];
-  if (trackedDrawZone) return trackedKnowledgeWindowCards(trackedDrawZone, player);
-
-  return { cards: [], unknownCount: 0 };
-}
-
-function discardKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const rawDiscardZone = relatedPlayerZone(latestSnapshot, sourceZone, "DiscardZone");
-  if (rawDiscardZone) return knowledgeWindowCardsForZone(rawDiscardZone, summary);
-
-  const player = knowledgeForZone(summary, sourceZone);
-  const trackedDiscardZone = player?.zones
-    .filter((zone) => zone.zoneName === "DiscardZone")
-    .sort((a, b) => b.totalCount - a.totalCount || a.zoneKey.localeCompare(b.zoneKey))[0];
-  if (trackedDiscardZone) return trackedKnowledgeWindowCards(trackedDiscardZone, player);
-
-  return { cards: [], unknownCount: 0 };
-}
-
-function isActiveDeckZone(zoneName: string): boolean {
-  return zoneName === "DrawZone" || zoneName === "DiscardZone";
-}
-
-function excludedFromActiveDeckKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const player = knowledgeForZone(summary, sourceZone);
-  if (player) {
-    return combineTrackedZonesForKnowledgeWindow(player.zones.filter((zone) => !isActiveDeckZone(zone.zoneName)));
-  }
-
-  return combineKnowledgeWindowPiles(
-    (latestSnapshot?.playerZones ?? [])
-      .filter((zone) => !isActiveDeckZone(zone.zoneName) && samePlayer(zone.owner, sourceZone.owner))
-      .map((zone) => knowledgeWindowCardsForZone(zone, summary))
-  );
-}
-
-function entireDeckKnowledgeWindowCards(sourceZone: ZoneDetail, summary: KnowledgeSummary): KnowledgeWindowPileSummary {
-  const player = knowledgeForZone(summary, sourceZone);
-  if (!player) return { cards: [], unknownCount: 0 };
-  return {
-    cards: counterToWindowCards(player.totalKnownOwned),
-    unknownCount: player.totalUnknownOwned
-  };
-}
-
-function heroDrawZone(snapshot: NavigatorSnapshot): ZoneDetail | undefined {
-  return snapshot.heroZones
-    .filter((zone) => zone.zoneName === "DrawZone")
-    .sort((a, b) => b.cardCount - a.cardCount || a.index - b.index)[0];
-}
-
-function showDrawKnowledgeWindow(zone: ZoneDetail): void {
-  const summary = tracker.summary();
-  const { cards, unknownCount } = drawKnowledgeWindowCards(zone, summary);
-  const command: ContentCommand = {
-    source: MESSAGE_SOURCE,
-    type: "show-draw-knowledge-window",
-    payload: {
-      sourceZoneIndex: zone.index,
-      playerName: playerDisplayName(zone.owner),
-      cards,
-      unknownCount,
-      discardPile: discardKnowledgeWindowCards(zone, summary),
-      excludedFromActiveDeck: excludedFromActiveDeckKnowledgeWindowCards(zone, summary),
-      entireDeck: entireDeckKnowledgeWindowCards(zone, summary)
-    }
-  };
-  window.postMessage(command, window.location.origin);
-}
-
 function showHeroDrawKnowledgeWindow(): void {
-  if (!latestSnapshot) {
-    pendingHeroDrawWindowOpen = true;
-    requestSnapshot();
-    return;
-  }
-
-  const zone = heroDrawZone(latestSnapshot);
-  if (zone) {
-    showDrawKnowledgeWindow(zone);
+  const zone = latestSnapshot ? heroDrawZone(latestSnapshot) : undefined;
+  if (latestSnapshot && zone) {
+    showDrawKnowledgeWindow(zone, latestSnapshot);
     return;
   }
 
@@ -1207,197 +109,49 @@ function showHeroDrawKnowledgeWindow(): void {
   requestSnapshot();
 }
 
+function handleSnapshot(snapshot: NavigatorSnapshot): void {
+  latestSnapshot = snapshot;
+  if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
+  const summary = invariants.checkSnapshot(snapshot);
+  overlay.renderSnapshotStatus(snapshot);
+  overlay.renderKnowledge(summary);
+  overlay.renderZones(summary, snapshot);
+  if (pendingHeroDrawWindowOpen) {
+    pendingHeroDrawWindowOpen = false;
+    const zone = heroDrawZone(snapshot);
+    if (zone) showDrawKnowledgeWindow(zone, snapshot);
+  }
+  persist(snapshot);
+  logWatcher.startAfterCurrentHistory();
+}
+
+function handleCardMove(move: CardMoveSummary): void {
+  recentMoves.push(move);
+  while (recentMoves.length > RECENT_MOVE_LIMIT) recentMoves.shift();
+  tracker.applyMove(move);
+  topdecks.record(move);
+  const summary = invariants.checkMove(move);
+  overlay.renderMoves(recentMoves);
+  refreshKnowledge(summary);
+}
+
 function handleDocumentClick(event: MouseEvent): void {
   if (event.button !== 0) return;
-  if (event.composedPath().includes(root)) return;
+  if (event.composedPath().includes(overlay.root)) return;
+  if (!latestSnapshot) return;
 
-  const zone = latestSnapshot ? clickedKnowledgeZone(latestSnapshot, event.clientX, event.clientY) : undefined;
+  const zone = clickedKnowledgeZone(latestSnapshot, event.clientX, event.clientY);
   if (!zone) return;
 
   event.preventDefault();
   event.stopPropagation();
-  showDrawKnowledgeWindow(zone);
-}
-
-document.addEventListener("click", handleDocumentClick, true);
-window.addEventListener("resize", () => {
-  if (resizeSnapshotTimer !== undefined) window.clearTimeout(resizeSnapshotTimer);
-  resizeSnapshotTimer = window.setTimeout(() => {
-    resizeSnapshotTimer = undefined;
-    requestSnapshot();
-  }, 150);
-});
-
-function renderSnapshot(snapshot: NavigatorSnapshot): void {
-  latestSnapshot = snapshot;
-  if (!restorePersistedStateForSnapshot(snapshot)) tracker.applySnapshot(snapshot);
-  const beforeInvariantSummary = tracker.summary();
-  const { summary } = reportCountInvariants(
-    "snapshot",
-    observedExactCountZonesFromSnapshot(snapshot),
-    beforeInvariantSummary,
-    snapshot
-  );
-  const heroName = snapshot.hero?.name ?? "unknown player";
-  const turn = snapshot.activeTurn?.turnNumber === undefined ? "unknown turn" : `turn ${snapshot.activeTurn.turnNumber}`;
-  metaElement.textContent = `${heroName} · ${turn} · ${snapshot.gameRunning ? "running" : "not running"}`;
-  renderKnowledge(summary);
-  renderZones(summary, snapshot);
-  if (pendingHeroDrawWindowOpen) {
-    pendingHeroDrawWindowOpen = false;
-    const zone = heroDrawZone(snapshot);
-    if (zone) showDrawKnowledgeWindow(zone);
-  }
-  persistState(snapshot);
-}
-
-function renderMoves(): void {
-  if (!recentMoves.length) {
-    movesElement.innerHTML = '<span class="muted">No moves captured yet.</span>';
-    return;
-  }
-
-  movesElement.replaceChildren(
-    ...recentMoves.slice(-6).reverse().map((move) => {
-      const item = document.createElement("div");
-      item.className = "move";
-      const cards = move.cardsAfterMoving.filter((name) => name !== "Anonymous").join(", ") || move.cards.join(", ");
-      const from = move.from ? zoneDisplayName(move.from) : "?";
-      const to = move.to ? zoneDisplayName(move.to) : "?";
-      item.textContent = `${move.phase}: ${cards || "unknown cards"} · ${from} → ${to}`;
-      return item;
-    })
-  );
-}
-
-window.addEventListener("message", (event: MessageEvent<ProbeMessage>) => {
-  if (event.source !== window || event.data?.source !== MESSAGE_SOURCE) return;
-
-  if (event.data.type === "status" && !event.data.payload.ok) {
-    metaElement.textContent = event.data.payload.reason ?? "Probe is not ready.";
-    return;
-  }
-  if (event.data.type === "status") return;
-
-  if (event.data.type === "snapshot") {
-    renderSnapshot(event.data.payload);
-    initializeLogHistoryBoundary();
-    return;
-  }
-
-  if (event.data.type === "card-move") {
-    recentMoves.push(event.data.payload);
-    while (recentMoves.length > 30) recentMoves.shift();
-    tracker.applyMove(event.data.payload);
-    recordAnonymousTopdeck(event.data.payload);
-    const beforeInvariantSummary = tracker.summary();
-    const { summary } = reportCountInvariants(
-      "card-move",
-      observedExactCountZonesFromMove(event.data.payload),
-      beforeInvariantSummary,
-      event.data.payload
-    );
-    renderMoves();
-    renderKnowledge(summary);
-    if (latestSnapshot) renderZones(summary, latestSnapshot);
-    if (latestSnapshot) persistState(latestSnapshot);
-    return;
-  }
-});
-
-function processLogLine(element: Element, seen: WeakSet<Element>): void {
-  if (seen.has(element)) return;
-  if (!logObserverReady) {
-    seen.add(element);
-    return;
-  }
-
-  const text = element.textContent?.replace(/\s+/g, " ").trim();
-  const isTopdeckLog = Boolean(text && parseTopdeckLog(text));
-  const isRevealedHandLog = Boolean(text && parseRevealedHandLog(text));
-  const isReactionLog = Boolean(text && parseReactionLog(text));
-  if (!text) return;
-  if (!isTopdeckLog && !isRevealedHandLog && !isReactionLog) {
-    if (isPotentialKnowledgeLogLine(text)) {
-      deferUnresolvedLogLine(element, seen);
-      return;
-    }
-    seen.add(element);
-    return;
-  }
-
-  if (!applyKnownCardInZoneFromLogText(text) && !applyKnownHandFromLogText(text) && !applyKnownReactionFromLogText(text)) {
-    deferUnresolvedLogLine(element, seen);
-    return;
-  }
-
-  pendingLogLineFirstSeen.delete(element);
-  seen.add(element);
-  const summary = tracker.summary();
-  renderKnowledge(summary);
-  if (latestSnapshot) renderZones(summary, latestSnapshot);
-  if (latestSnapshot) persistState(latestSnapshot);
-}
-
-function isPotentialKnowledgeLogLine(text: string): boolean {
-  return /(?:\btopdecks\b|\breveals their hand:|\breacts with\b)/.test(text);
-}
-
-function deferUnresolvedLogLine(element: Element, seen: WeakSet<Element>): void {
-  const firstSeen = pendingLogLineFirstSeen.get(element) ?? Date.now();
-  pendingLogLineFirstSeen.set(element, firstSeen);
-  if (Date.now() - firstSeen > LOG_LINE_RETRY_MS) {
-    pendingLogLineFirstSeen.delete(element);
-    seen.add(element);
-  }
-}
-
-function initializeLogHistoryBoundary(): void {
-  if (logObserverReady) return;
-  for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
-  pendingLogLineFirstSeen = new WeakMap<Element, number>();
-  logObserverReady = true;
-}
-
-function installLogObserver(): void {
-  const scan = (): void => {
-    for (const element of Array.from(document.querySelectorAll(".log-line"))) processLogLine(element, seenLogLines);
-  };
-
-  const containingLogLine = (node: Node): Element | undefined => {
-    if (node instanceof Element) {
-      if (node.classList.contains("log-line")) return node;
-      return node.closest(".log-line") ?? undefined;
-    }
-    return node.parentNode instanceof Element ? node.parentNode.closest(".log-line") ?? undefined : undefined;
-  };
-
-  for (const element of Array.from(document.querySelectorAll(".log-line"))) seenLogLines.add(element);
-
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === "characterData") {
-        const logLine = containingLogLine(mutation.target);
-        if (logLine) processLogLine(logLine, seenLogLines);
-      }
-
-      for (const node of Array.from(mutation.addedNodes)) {
-        const logLine = containingLogLine(node);
-        if (logLine) processLogLine(logLine, seenLogLines);
-        if (node instanceof Element) {
-          for (const child of Array.from(node.querySelectorAll(".log-line"))) processLogLine(child, seenLogLines);
-        }
-      }
-    }
-  });
-  observer.observe(document.body, { characterData: true, childList: true, subtree: true });
-  window.setInterval(scan, 1000);
+  showDrawKnowledgeWindow(zone, latestSnapshot);
 }
 
 function injectProbe(): void {
-  const src = runtime.chrome?.runtime?.getURL?.("page-probe.js");
+  const src = chromeApi?.runtime?.getURL?.("page-probe.js");
   if (!src) {
-    metaElement.textContent = "Unable to resolve extension probe URL.";
+    overlay.setStatus("Unable to resolve extension probe URL.");
     return;
   }
 
@@ -1407,11 +161,34 @@ function injectProbe(): void {
   (document.head || document.documentElement).appendChild(script);
 }
 
+document.addEventListener("click", handleDocumentClick, true);
+window.addEventListener("resize", () => {
+  if (resizeSnapshotTimer !== undefined) window.clearTimeout(resizeSnapshotTimer);
+  resizeSnapshotTimer = window.setTimeout(() => {
+    resizeSnapshotTimer = undefined;
+    requestSnapshot();
+  }, RESIZE_SNAPSHOT_DELAY_MS);
+});
+
+listenForNavigatorMessages((message) => {
+  switch (message.type) {
+    case "status":
+      if (!message.payload.ok) overlay.setStatus(message.payload.reason ?? "Probe is not ready.");
+      return;
+    case "snapshot":
+      handleSnapshot(message.payload);
+      return;
+    case "card-move":
+      handleCardMove(message.payload);
+      return;
+  }
+});
+
 void (async () => {
   persistedState = await loadPersistedState();
-  installLogObserver();
+  logWatcher.install();
   injectProbe();
   setInterval(() => {
     if (!latestSnapshot?.gameRunning) requestSnapshot();
-  }, 2000);
+  }, IDLE_SNAPSHOT_INTERVAL_MS);
 })();

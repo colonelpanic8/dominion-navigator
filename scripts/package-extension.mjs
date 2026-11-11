@@ -2,24 +2,12 @@ import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync } from "node:zlib";
+import { crc32 } from "./lib/crc32.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, "dist");
 const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
 const outFile = resolve(root, "releases", `dominion-navigator-${manifest.version}.zip`);
-
-const crcTable = new Uint32Array(256);
-for (let i = 0; i < 256; i += 1) {
-  let c = i;
-  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  crcTable[i] = c >>> 0;
-}
-
-function crc32(buffer) {
-  let c = 0xffffffff;
-  for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
 
 async function collectFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
