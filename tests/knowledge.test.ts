@@ -37,12 +37,12 @@ function zone(index: number, zoneName: string, cardNames: string[], unknownCount
   };
 }
 
-function summaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
+function summaryZone(index: number, zoneName: string, topCards: string[] = [], owner: ZoneSummary["owner"] = player): ZoneSummary {
   return {
     index,
     zoneName,
     runtimeType: "Zone",
-    owner: player,
+    owner,
     cardCount: 0,
     stackCount: 0,
     topCards
@@ -50,39 +50,15 @@ function summaryZone(index: number, zoneName: string, topCards: string[] = []): 
 }
 
 function opponentSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: opponent,
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, opponent);
 }
 
 function thirdPlayerSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: thirdPlayer,
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, thirdPlayer);
 }
 
 function neutralSummaryZone(index: number, zoneName: string, topCards: string[] = []): ZoneSummary {
-  return {
-    index,
-    zoneName,
-    runtimeType: "Zone",
-    owner: { index: -1, isHero: false },
-    cardCount: 0,
-    stackCount: 0,
-    topCards
-  };
+  return summaryZone(index, zoneName, topCards, { index: -1, isHero: false });
 }
 
 function snapshot(playerZones: ZoneDetail[], gameInstanceId = "game-1", startingDeck?: string[]): NavigatorSnapshot {
