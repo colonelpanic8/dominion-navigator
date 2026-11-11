@@ -142,6 +142,20 @@ test("inspect bounds cyclic client objects and follows paths through maps", () =
   assert.match((inspectPath({ game: () => state }, "nope") as { error: string }).error, /roots are game/);
 });
 
+test("table notes give a pile's counters to the pile and a player's to the player", () => {
+  const ann = { index: 0, name: "Ann" };
+  const nobody = { index: -1 };
+  const temple = { pileName: { name: "Temple" } };
+  const state = {
+    players: [ann],
+    counters: [
+      { counterName: { name: "VP Tokens" }, owner: nobody, value: 1, associatedPile: temple, associatedCard: null },
+      { counterName: { name: "Debt Tokens" }, owner: ann, value: 2, associatedPile: temple, associatedCard: null }
+    ]
+  };
+  assert.deepEqual(tableNotes(state), ["The Temple pile has 1 VP token.", "Ann has 2 Debt tokens on the Temple pile."]);
+});
+
 test("table notes report expansion state the view has no field for, and nothing in a plain game", () => {
   const players = [
     { index: 0, name: "Ann", boughtProjects: [{ name: "Cathedral" }], activeReminders: [{ cardName: { name: "Bridge" } }] },
@@ -177,8 +191,8 @@ test("table notes report expansion state the view has no field for, and nothing 
   assert.deepEqual(tableNotes(busy), [
     "Bob controls this turn.",
     "Bob's +Action token is on Village.",
-    "Embargo Tokens 1 on Village.",
-    "VP Tokens 3 on Temple.",
+    "The Village pile has 1 Embargo token.",
+    "The Temple pile has 3 VP tokens.",
     "Ann has bought Cathedral.",
     "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player)."
   ]);
@@ -203,7 +217,7 @@ test("table notes name landscape piles by their card and say when a token is on 
     "Ann has their -Card token, not on a pile.",
     "Journey token (face down) is not on a pile.",
     "Ann's Estate token is on their Tavern mat.",
-    "VP Tokens 12 on Battlefield."
+    "Battlefield has 12 VP tokens."
   ]);
 });
 
