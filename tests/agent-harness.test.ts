@@ -323,6 +323,24 @@ test("a buy decision says which treasures the buy list leaves out or would never
   assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
 });
 
+test("a treasure to play shows what it makes, not what it costs", () => {
+  const decision = firstBuy.decision!;
+  const playGroup = decision.groups.find((group) => group.kind === "play")!.group;
+  const extra = ["Bank", "Remodel"].map((card, offset) => ({ index: decision.options.length + offset, group: playGroup, kind: "card" as const, label: card, card }));
+  const view: AgentView = {
+    ...firstBuy,
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"], made: { Copper: { coins: 1, potions: 0 } } } },
+    decision: { ...decision, options: [...decision.options, ...extra] }
+  };
+  const text = renderAgentViewText(view);
+  const copper = decision.options.find((option) => option.group === playGroup && option.card === "Copper")!;
+  assert.match(text, new RegExp(`^ {4}${copper.index}: Copper \\+\\$1$`, "m"));
+  assert.match(text, new RegExp(`^ {4}${extra[0]!.index}: Bank$`, "m"));
+  assert.match(text, new RegExp(`^ {4}${extra[1]!.index}: Remodel \\$4$`, "m"));
+  const silver = decision.options.find((option) => option.card === "Silver")!;
+  assert.match(text, new RegExp(`^ {4}${silver.index}: Silver \\$3$`, "m"));
+});
+
 test("a result says how the game ended when the supply or a resignation shows it", () => {
   const players = [
     { name: "colonelpanic8", rank: 1, points: 48, turns: 17, resigned: false },

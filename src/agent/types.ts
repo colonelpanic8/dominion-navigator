@@ -157,6 +157,8 @@ export type HandTreasure = {
   potions: number;
   /** Treasures whose value depends on the game (Bank, Fool's Gold, ...), by name. */
   variable: string[];
+  /** What one of each fixed-value Treasure in hand makes, by name. */
+  made?: Record<string, { coins: number; potions: number }>;
 };
 
 export type TurnView = {

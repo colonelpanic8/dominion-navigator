@@ -85,17 +85,20 @@ function gameNumber(game: RuntimeGame): string | undefined {
 function handTreasure(game: RuntimeGame, zones: RuntimeZone[]): HandTreasure | undefined {
   const me = game.playerModel?.playerMe;
   if (me?.index === undefined) return undefined;
-  const result: HandTreasure = { coins: 0, potions: 0, variable: [] };
+  const made: NonNullable<HandTreasure["made"]> = {};
+  const result: HandTreasure = { coins: 0, potions: 0, variable: [], made };
   for (const zone of zones) {
     if (!isRuntimeInstance(zone, "HandZone") || zone.owner?.index !== me.index) continue;
     for (const stack of zone.cardStacks ?? []) {
       for (const card of stack?.cards ?? []) {
         const name = card.cardName;
         if (!name?.name || !(name.types ?? []).some((type) => type.name === "Treasure")) continue;
-        const made = name.coinProduction;
-        if (made && !made.isSpecial && typeof made.coin === "number") {
-          result.coins += made.coin;
-          result.potions += typeof made.potion === "number" ? made.potion : 0;
+        const production = name.coinProduction;
+        if (production && !production.isSpecial && typeof production.coin === "number") {
+          const potions = typeof production.potion === "number" ? production.potion : 0;
+          result.coins += production.coin;
+          result.potions += potions;
+          made[name.name] = { coins: production.coin, potions };
         } else {
           result.variable.push(name.name);
         }
