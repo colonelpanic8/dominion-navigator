@@ -1,9 +1,11 @@
-import type { AgentView } from "./agent/types";
+import { inspectPath, InspectOptions, InspectResult } from "./agent/inspect";
+import type { ActionResult, AgentView, LogPage, SessionState } from "./agent/types";
 import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
 import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot } from "./messages";
 import { AgentBridge, WaitResult } from "./probe/agent-bridge";
 import { showDrawKnowledgeWindow } from "./probe/knowledge-modal";
-import { DominionGlobals, getGame, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
+import { DominionGlobals, getGame, getService, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
+import { readSession, resignGame, startBotGame } from "./probe/session";
 import type { AnswerResult } from "./probe/questions";
 import { GAME_NOT_READY, postStatus } from "./probe/status";
 import { gameFingerprint, makeMoveSummary, makeSnapshot } from "./probe/summaries";
@@ -23,6 +25,24 @@ type ProbeState = {
   waitForDecision: (options?: { timeoutMs?: number; pollMs?: number }) => Promise<WaitResult>;
   answer: (decisionId: string, indices: number[]) => AnswerResult;
   debugState: AgentBridge["debugState"];
+  getSession: () => SessionState;
+  getLog: (options?: { afterIndex?: number; limit?: number }) => LogPage;
+  inspect: (path: string, options?: InspectOptions) => InspectResult;
+  startBotGame: (bots: number) => Promise<ActionResult>;
+  resign: () => Promise<ActionResult>;
+};
+
+/** Named starting points for `inspect` paths. */
+const INSPECT_ROOTS: Record<string, () => unknown> = {
+  game: getGame,
+  table: () => {
+    const tableService = getService("tableService");
+    return tableService?.hasTable?.() ? tableService.getTable?.() : undefined;
+  },
+  meta: () => getService("meta"),
+  knowledge: () => agent.knowledgeSummary,
+  probe: () => win.__dominionNavigator,
+  window: () => window
 };
 
 const win = window as Window & typeof globalThis & DominionGlobals & { __dominionNavigator?: ProbeState };
@@ -149,7 +169,12 @@ function install(): void {
     getAgentViewText: () => agent.getAgentViewText(),
     waitForDecision: (options) => agent.waitForDecision(options),
     answer: (decisionId, indices) => agent.answer(decisionId, indices),
-    debugState: () => agent.debugState()
+    debugState: () => agent.debugState(),
+    getSession: readSession,
+    getLog: (options) => agent.getLog(options),
+    inspect: (path, options) => inspectPath(INSPECT_ROOTS, path, options),
+    startBotGame,
+    resign: resignGame
   };
   win.__dominionNavigator = probe;
   if (game) probe.game = game;

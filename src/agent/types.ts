@@ -168,3 +168,27 @@ export type GlossaryEntry = {
 };
 
 export type CardGlossary = Record<string, GlossaryEntry>;
+
+/** Where the client is, so a harness can tell why there is no decision without looking at the page. */
+export type SessionState = {
+  screen: "login" | "lobby" | "table" | "game";
+  user?: string;
+  table?: { id?: number; host: boolean; players: string[]; bots: string[]; openSeats: number };
+  /** Present on the game screen. `over`: the result is in and the end-of-game notice is still up. */
+  game?: { over: boolean; opponentsAreBots: boolean };
+};
+
+export type LogEntry = {
+  index: number;
+  /** Nesting depth the client indents the line by. */
+  depth: number;
+  text: string;
+};
+
+export type LogPage = {
+  entries: LogEntry[];
+  /** Index of the newest entry in the game log, or -1 when it is empty. */
+  lastIndex: number;
+};
+
+export type ActionResult = { ok: true; session: SessionState } | { ok: false; error: string };

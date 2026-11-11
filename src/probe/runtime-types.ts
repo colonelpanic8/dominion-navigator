@@ -50,7 +50,11 @@ export type RuntimePlayer = {
   playerId?: number;
   name?: string;
   isHero?: boolean;
+  isMe?: boolean;
 };
+
+/** Bots have player ids at or above this value. */
+export const FIRST_BOT_PLAYER_ID = 2 ** 30;
 
 export type RuntimeZone = {
   index?: number;
@@ -122,8 +126,44 @@ export type RuntimeGameResult = {
 
 export type RuntimeLogEntry = {
   index?: number;
+  depth?: number;
   name?: RuntimeEnumValue;
   logArguments?: unknown[];
+};
+
+export type RuntimeMeta = {
+  model?: { me?: { id?: number; name?: string } };
+};
+
+export type RuntimeTableDetails = {
+  tableId?: number;
+  bots?: Array<{ name?: string }>;
+};
+
+export type RuntimeTableService = {
+  hasTable?: () => boolean;
+  getTable?: () => RuntimeTableDetails;
+  getPlayers?: () => Array<{ name?: string }>;
+  heroIsHost?: () => boolean;
+  openSeatCount?: () => number;
+  ready?: () => void;
+  leave?: () => void;
+};
+
+export type RuntimeAutomatch = {
+  botMatch?: (bots: number) => void;
+};
+
+export type RuntimeServerMessenger = {
+  resign?: () => void;
+};
+
+export type RuntimeServices = {
+  game: RuntimeGame;
+  meta: RuntimeMeta;
+  tableService: RuntimeTableService;
+  automatch: RuntimeAutomatch;
+  serverMessenger: RuntimeServerMessenger;
 };
 
 export type RuntimeGame = {
@@ -182,13 +222,17 @@ export type DominionGlobals = {
 
 export const dominion = window as Window & typeof globalThis & DominionGlobals;
 
-export function getGame(): RuntimeGame | undefined {
+export function getService<Name extends keyof RuntimeServices>(name: Name): RuntimeServices[Name] | undefined {
   try {
     const injector = dominion.angular?.element(document.body).injector();
-    return injector?.get("game") as RuntimeGame;
+    return injector?.get(name) as RuntimeServices[Name];
   } catch {
     return undefined;
   }
+}
+
+export function getGame(): RuntimeGame | undefined {
+  return getService("game");
 }
 
 export function isRuntimeInstance(value: unknown, className: string): boolean {

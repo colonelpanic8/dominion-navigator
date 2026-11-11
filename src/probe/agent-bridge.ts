@@ -1,6 +1,6 @@
 import { buildAgentView } from "../agent/agent-view";
 import { renderAgentViewText } from "../agent/render-text";
-import { AgentView, GameResult, RawQuestion, TableState } from "../agent/types";
+import { AgentView, GameResult, LogEntry, LogPage, RawQuestion, TableState } from "../agent/types";
 import type { KnowledgeSummary } from "../knowledge";
 import { answerDecision, AnswerResult, openDecisions, readOpenQuestions } from "./questions";
 import { dominion, getGame, RuntimeGame } from "./runtime-types";
@@ -19,29 +19,30 @@ export type WaitResult = {
   knowledgeLag: number;
 };
 
-function logLines(game: RuntimeGame, afterIndex: number): string[] {
+function logEntries(game: RuntimeGame, afterIndex: number): LogEntry[] {
   const Parser = dominion.LogLineParser;
   const templates = dominion.LANGUAGE?.getLogEntry as Record<string, string> | undefined;
   if (!Parser || !game.state || !templates) return [];
   const parser = new Parser(game.state, game.state.players, true);
-  const lines: string[] = [];
+  const entries: LogEntry[] = [];
   for (const entry of game.logModel?.entries ?? []) {
-    if ((entry.index ?? -1) <= afterIndex) continue;
+    const index = entry.index ?? -1;
+    if (index <= afterIndex) continue;
     const template = entry.name !== undefined ? templates[String(entry.name)] : undefined;
     if (!template) continue;
     try {
-      const line = parser
+      const text = parser
         .parseLineWithArguments(template, entry.logArguments ?? [])
         .map((part) => part.text ?? "")
         .join("")
         .replace(/\s+/g, " ")
         .trim();
-      if (line) lines.push(line);
+      if (text) entries.push({ index, depth: entry.depth ?? 0, text });
     } catch {
       // Skip entries the client's own parser cannot render.
     }
   }
-  return lines.slice(-MAX_LOG_LINES);
+  return entries;
 }
 
 function latestLogIndex(game: RuntimeGame): number {
@@ -119,7 +120,9 @@ export class AgentBridge {
       table: result ? { ...table, running: false, result } : table,
       knowledge: this.knowledge,
       decision,
-      sinceLastDecision: logLines(game, this.lastAnsweredLogIndex)
+      sinceLastDecision: logEntries(game, this.lastAnsweredLogIndex)
+        .map((entry) => entry.text)
+        .slice(-MAX_LOG_LINES)
     });
   }
 
@@ -161,6 +164,18 @@ export class AgentBridge {
     const result = answerDecision(game, decisionId, indices);
     if (result.ok) this.lastAnsweredLogIndex = logIndex;
     return result;
+  }
+
+  /** The game log after `afterIndex`, newest last; `limit` keeps only the newest entries. */
+  getLog(options: { afterIndex?: number; limit?: number } = {}): LogPage {
+    const game = getGame();
+    if (!game?.state) return { entries: [], lastIndex: -1 };
+    const entries = logEntries(game, options.afterIndex ?? -1);
+    return { entries: options.limit !== undefined ? entries.slice(-Math.max(0, options.limit)) : entries, lastIndex: latestLogIndex(game) };
+  }
+
+  get knowledgeSummary(): KnowledgeSummary | undefined {
+    return this.knowledge;
   }
 
   /** The projection's inputs, for debugging and test fixtures. */
