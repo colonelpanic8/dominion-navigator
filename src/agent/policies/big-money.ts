@@ -37,7 +37,7 @@ function trashValue(card: string, facts: CardFacts): number {
 function gainValue(card: string, facts: CardFacts): number {
   if (card === "Curse") return -10;
   const { cost, types } = facts(card);
-  return cost + (types.includes("Treasure") ? 1 : 0) + (card === "Province" ? 2 : 0);
+  return cost + (types.includes("Treasure") ? 1.5 : 0) + (card === "Province" ? 2 : 0);
 }
 
 function optionsIn(view: DecidableView, group: DecisionGroup | undefined): DecisionOption[] {

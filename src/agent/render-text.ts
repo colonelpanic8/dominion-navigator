@@ -51,9 +51,8 @@ function pileCosts(view: AgentView): Map<string, Cost> {
 
 const AUTOPLAY = "Autoplay Treasures";
 
-/** Buying and gaining are decided by price, so those options carry the pile's current cost. */
+/** Every card option carries its cost, from the client or else from its pile. */
 function decision(value: Decision, costs: Map<string, Cost>, buys: number | undefined): string[] {
-  const priced = (group: number): boolean => /buy|gain/.test(value.groups[group]?.kind ?? "");
   const lines = [`DECISION ${value.id}: ${value.prompt}`];
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
@@ -65,7 +64,7 @@ function decision(value: Decision, costs: Map<string, Cost>, buys: number | unde
     if (multipleGroups) lines.push(`  [${group.kind}] ${group.prompt} (${bounds})`);
     else lines.push(`  ${bounds}`);
     for (const option of value.options.filter((item) => item.group === group.group)) {
-      const price = option.card && priced(option.group) ? costs.get(option.card) : undefined;
+      const price = option.cost ?? (option.card ? costs.get(option.card) : undefined);
       lines.push(`    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${option.kind === "decline" ? " (decline)" : ""}`);
     }
   }

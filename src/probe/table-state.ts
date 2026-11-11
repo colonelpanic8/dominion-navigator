@@ -4,7 +4,7 @@ import { tableNotes } from "../agent/table-notes";
 import { dominion, isRuntimeInstance, RuntimeCard, RuntimeGame, RuntimeZone } from "./runtime-types";
 import { NeutralZoneKind, neutralZoneKind } from "./zone-kind";
 
-function cost(card: RuntimeCard | undefined): Cost | undefined {
+export function runtimeCost(card: RuntimeCard | undefined): Cost | undefined {
   const value = card?.cost;
   if (!value || value.coin === undefined) return undefined;
   return {
@@ -26,7 +26,7 @@ function pile(zone: RuntimeZone): PileView | undefined {
   const top = topCard(zone);
   const card = top?.cardName?.name ?? zone.pileName?.name;
   if (!card || card === "Back") return undefined;
-  const pileCost = cost(top);
+  const pileCost = runtimeCost(top);
   return {
     card,
     count: zoneCardCount(zone),

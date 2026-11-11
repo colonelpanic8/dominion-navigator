@@ -70,6 +70,8 @@ export type RawQuestionElement = {
   kind: "card" | "button" | "mode" | "card-name" | "ability" | "zone" | "other";
   label: string;
   card?: string;
+  /** The card's current cost, for card elements. */
+  cost?: Cost;
 };
 
 export type DecisionOptionKind = RawQuestionElement["kind"] | "decline" | "number" | "accept" | "keep-order";
@@ -80,6 +82,8 @@ export type DecisionOption = {
   kind: DecisionOptionKind;
   label: string;
   card?: string;
+  /** The card's current cost, when the client gave one. */
+  cost?: Cost;
   value?: number;
 };
 

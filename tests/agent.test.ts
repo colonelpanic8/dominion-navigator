@@ -19,13 +19,14 @@ test("buy-phase answers stay within one branch of the client's OR question", () 
   const live = view(item);
   const root = item.rawQuestions[0]!;
   const buySilver = optionIndex(live, "buy", "Silver");
+  const silverElement = root.subquestions![0]!.elements!.findIndex((element) => element.card === "Silver");
   const endBuys = optionIndex(live, "buy", "End Buys");
   const autoplay = optionIndex(live, "button", "Autoplay Treasures");
   const treasure = live.decision!.options.find((option) => live.decision!.groups[option.group]!.kind === "play")!.index;
 
   assert.deepEqual(resolveAnswer(root, item.decisionId, [buySilver]), {
     ok: true,
-    plan: { leaves: [{ path: [0], action: "select", elements: [live.decision!.options[buySilver]!.index] }] }
+    plan: { leaves: [{ path: [0], action: "select", elements: [silverElement] }] }
   });
   assert.deepEqual(resolveAnswer(root, item.decisionId, [endBuys]), { ok: true, plan: { leaves: [{ path: [0], action: "decline" }] } });
   assert.deepEqual(resolveAnswer(root, item.decisionId, [autoplay]), { ok: true, plan: { leaves: [{ path: [2], action: "select", elements: [0] }] } });
@@ -76,6 +77,40 @@ test("an ordering prompt takes every card once, bottom first, or keeps the clien
   assert.match(errorOf(resolveAnswer(root, "d24", [1])), /exactly 2/);
   assert.match(errorOf(resolveAnswer(root, "d24", [0, 2])), /on its own/);
   assert.match(renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision }), /choose all 2 in order, bottom card first and top card last/);
+});
+
+test("hand cards list by cost, then name, whatever order the client sends them in", () => {
+  const card = (name: string, coins: number) => ({ kind: "card" as const, label: name, card: name, cost: { coins } });
+  const hand = [card("Gold", 6), card("Curse", 0), card("Silver", 3), card("Copper", 0)];
+  const prompt = (elements: NonNullable<RawQuestion["elements"]>): RawQuestion => ({
+    questionClass: "choice",
+    type: "TRASH",
+    questionId: "CRUCIBLE",
+    prompt: "Trash a card",
+    path: [],
+    min: 1,
+    max: 1,
+    declineLabel: "Trash nothing",
+    elements
+  });
+  const shuffled = [hand[2]!, hand[0]!, hand[3]!, hand[1]!];
+  for (const elements of [hand, shuffled]) {
+    const root = prompt(elements);
+    const decision = buildDecision(root, "d60");
+    assert.deepEqual(
+      decision.options.map((option) => option.label),
+      ["Copper", "Curse", "Silver", "Gold", "Trash nothing"]
+    );
+    for (const option of decision.options.slice(0, 4)) {
+      const plan = resolveAnswer(root, "d60", [option.index]);
+      assert.ok(plan.ok);
+      const [leaf] = plan.plan.leaves;
+      assert.equal(leaf?.action === "select" && elements[leaf.elements[0]!]!.card, option.card);
+    }
+  }
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_TRASH")), decision: buildDecision(prompt(shuffled), "d60") });
+  assert.match(text, /^ {4}2: Silver \$3$/m);
+  assert.match(text, /^ {4}4: Trash nothing \(decline\)$/m);
 });
 
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {

@@ -1,4 +1,4 @@
-import { Decision, DecisionGroup, DecisionOption, RawQuestion } from "./types";
+import { Cost, Decision, DecisionGroup, DecisionOption, RawQuestion } from "./types";
 
 /** How to answer one leaf question of the client's question tree. */
 export type LeafAnswer =
@@ -43,17 +43,46 @@ function nodeAt(root: RawQuestion, path: number[]): RawQuestion | undefined {
   return node;
 }
 
+type LeafOption = { option: Omit<DecisionOption, "index" | "group">; target: OptionTarget };
+
+function costKey(cost: Cost | undefined): number[] {
+  return cost ? [cost.coins, cost.potions ?? 0, cost.debt ?? 0] : [Infinity, 0, 0];
+}
+
+function compareCards(a: LeafOption, b: LeafOption): number {
+  const [left, right] = [costKey(a.option.cost), costKey(b.option.cost)];
+  const byCost = left.findIndex((value, index) => value !== right[index]);
+  return byCost >= 0 ? left[byCost]! - right[byCost]! : a.option.label.localeCompare(b.option.label);
+}
+
+/**
+ * Card options by cost, then name, in the slots cards held, so the same cards
+ * list alike from one decision to the next whatever order the client sends.
+ */
+function sortCards(options: LeafOption[]): LeafOption[] {
+  const cards = options.filter((item) => item.option.kind === "card").sort(compareCards);
+  let next = 0;
+  return options.map((item) => (item.option.kind === "card" ? cards[next++]! : item));
+}
+
 /** Options for one leaf, with the action each option maps to. */
-function leafOptions(question: RawQuestion): Array<{ option: Omit<DecisionOption, "index" | "group">; target: OptionTarget }> {
-  const options: Array<{ option: Omit<DecisionOption, "index" | "group">; target: OptionTarget }> = [];
+function leafOptions(question: RawQuestion): LeafOption[] {
+  const options: LeafOption[] = [];
   switch (question.questionClass) {
     case "choice": {
-      (question.elements ?? []).forEach((element, index) => {
-        options.push({
-          option: { kind: element.kind, label: element.label, ...(element.card ? { card: element.card } : {}) },
+      const elements = (question.elements ?? []).map(
+        (element, index): LeafOption => ({
+          option: {
+            kind: element.kind,
+            label: element.label,
+            ...(element.card ? { card: element.card } : {}),
+            ...(element.cost ? { cost: element.cost } : {})
+          },
           target: { action: "select", element: index }
-        });
-      });
+        })
+      );
+      // An order's "keep the current order" refers to the client's order, so it stays.
+      options.push(...(question.type === "ORDER_CARDS" ? elements : sortCards(elements)));
       if (question.type === "ORDER_CARDS") {
         options.push({ option: { kind: "keep-order", label: "Keep the current order" }, target: { action: "keep-order" } });
       }
