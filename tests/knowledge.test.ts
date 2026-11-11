@@ -1053,7 +1053,7 @@ test("log-revealed topdeck converts one anonymous draw card into a known card", 
   );
 
   tracker.applyMove(move(opponentSummaryZone(10, "HandZone", ["Back"]), opponentSummaryZone(11, "DrawZone", ["Back"]), 1));
-  assert.equal(tracker.markKnownCardInZone(opponent, "DrawZone", "Estate"), true);
+  assert.equal(tracker.markKnownCardsInZone(opponent, "DrawZone", ["Estate"], { idempotent: false }), true);
 
   const opponentKnowledge = tracker.summary().players.find((item) => item.player.index === opponent.index);
   const draw = opponentKnowledge?.zones.find((item) => item.zoneName === "DrawZone");
@@ -1119,7 +1119,7 @@ test("named put-back removes stale matching location before adding destination c
     ]
   });
 
-  assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Sanctuary"), true);
+  assert.equal(tracker.markKnownCardsInZone(player, "DrawZone", ["Sanctuary"], { idempotent: false }), true);
   tracker.applyMove(moveWithNames(summaryZone(0, "HandZone", ["Courtyard"]), summaryZone(1, "InPlayZone", ["Courtyard"]), ["Courtyard"]));
   tracker.applyMove(move(summaryZone(2, "DrawZone", ["Back"]), summaryZone(0, "HandZone", ["Back"]), 3));
   tracker.applyMove({
@@ -1382,7 +1382,7 @@ test("marking the final unknown card updates confidence to observed when identit
   tracker.setLocationIdentityRepairEnabled(true);
   tracker.applySnapshot(snapshot([zone(1, "DrawZone", [], 1)]));
 
-  assert.equal(tracker.markKnownCardInZone(player, "DrawZone", "Silver"), true);
+  assert.equal(tracker.markKnownCardsInZone(player, "DrawZone", ["Silver"], { idempotent: false }), true);
 
   const [knowledge] = tracker.summary().players;
 

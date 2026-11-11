@@ -332,22 +332,6 @@ export class DeckKnowledgeTracker {
     }
   }
 
-  markKnownCardInZone(playerSummary: PlayerSummary | undefined, zoneName: string, cardName: string): boolean {
-    const key = playerKey(playerSummary);
-    if (!key) return false;
-    const player = this.players.get(key);
-    if (!player) return false;
-    const zone = [...player.zones.values()].find((item) => item.zoneName === zoneName);
-    if (!zone || zone.unknownCount <= 0) return false;
-
-    zone.unknownCount -= 1;
-    increment(zone.knownCards, cardName);
-    if (zone.unknownCount === 0) zone.locationInferenceBlocked = false;
-
-    this.identifyUnknownOwnedCardsFromLocations(player, { includeControlledOnlyZones: false });
-    return true;
-  }
-
   markKnownCardsInZone(
     playerSummary: PlayerSummary | undefined,
     zoneName: string,
