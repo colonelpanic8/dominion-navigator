@@ -38,7 +38,9 @@ The knowledge model separates Dominion's internal zone state from what the playe
   - `src/probe/questions.ts`: reads the client's open questions and answers them.
   - `src/probe/table-state.ts`: public table state (supply, landscapes, trash, counters, turn).
   - `src/probe/agent-bridge.ts`: the agent API on `window.__dominionNavigator`.
-- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text rendering, decision building and answer validation (`decisions.ts`), the card glossary, and policies.
+  - `src/probe/session.ts`: which screen the client is on, and starting and resigning bot games.
+- `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text and delta rendering (`render-text.ts`), decision building and answer validation (`decisions.ts`), notes for expansion state (`table-notes.ts`), the raw-state dump (`inspect.ts`), the card glossary, and policies.
+- `scripts/mcp-server.ts`: the MCP server. `scripts/lib/dominion-tools.ts` defines its tools, `scripts/lib/dominion-client.ts` calls the probe over CDP, and `scripts/lib/mcp-stdio.ts` is the stdio transport.
 - `src/content-script.ts`: extension entry point that wires the pieces below together.
   - `src/content/overlay.ts`: the shadow-DOM overlay.
   - `src/content/knowledge-window.ts`: builds the card-details modal payload.
@@ -115,6 +117,45 @@ npm run agent:play -- --policy big-money --terminal Remodel --record decisions.j
 ```
 
 `--record` writes one JSON line per decision (view, text rendering, choice, result) plus a per-game card glossary built from `data/dominion-card-shaped-objects.json`.
+
+The same handle also covers everything outside a decision:
+
+```js
+window.__dominionNavigator.getSession()                          // screen (login, lobby, table, game), table seats, bots or humans
+await window.__dominionNavigator.startBotGame({ bots: 1, kingdom: ["Sentry", "Chapel"] })
+await window.__dominionNavigator.resign()
+window.__dominionNavigator.getLog({ afterIndex: 40, limit: 50 }) // the whole game log, with entry indices
+window.__dominionNavigator.inspect("game.state.zones.3", { depth: 2 })
+```
+
+`startBotGame` works from the lobby, a table, or a finished game. `kingdom` names cards and landscapes the table must use; the server fills the rest at random, and silently refuses to start a kingdom with cards the account cannot play. `inspect` dumps raw client or tracker state at a dotted path (roots: `game`, `table`, `meta`, `knowledge`, `probe`, `window`). It is for debugging: unlike the view, it is not limited to what the player may know.
+
+## Playing Through MCP
+
+`scripts/mcp-server.ts` serves the agent API as [Model Context Protocol](https://modelcontextprotocol.io) tools over stdio, so an agent can play and inspect a game without screenshots. It attaches to the Chrome that `npm run launch:chrome` started, with dominion.games logged in.
+
+The repository's `.mcp.json` registers it as `dominion` for Claude Code sessions started here. To register it elsewhere, run it from this directory:
+
+```sh
+node --import tsx scripts/mcp-server.ts
+```
+
+| Tool | What it does |
+| --- | --- |
+| `state` | The client's screen and, in a game, the whole table plus the text of every card in it. |
+| `step` | Answers the open decision with option numbers, waits for the next decision, and returns what changed. |
+| `wait` | Waits for the next decision without answering. |
+| `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
+| `resign` | Resigns the game in progress. |
+| `log` | Rereads the game log. |
+| `cards` | Card text, types and current cost by name. |
+| `inspect` | Raw client or tracker state at a path, for debugging. |
+
+`step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` always prints everything. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
+
+`step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
+
+State the view has no field for (tokens, counters on piles or cards, bought projects, traits, reminders, extra turns) is printed under `ALSO`. That part is read generically from the client and has not been checked against a live game that uses those mechanics.
 
 ## Debugging
 

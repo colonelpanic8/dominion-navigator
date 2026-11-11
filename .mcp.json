@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dominion": {
+      "command": "node",
+      "args": ["--import", "tsx", "scripts/mcp-server.ts"]
+    }
+  }
+}
