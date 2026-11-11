@@ -116,6 +116,8 @@ export function parseLogCardList(text: string, knownCardNames: Iterable<string> 
     const count = countMatch ? Number(countMatch[1]) : 1;
     const rawName = (countMatch ? countMatch[2] : part)?.replace(/^(?:a|an|the)\s+/i, "").trim();
     if (!rawName || !Number.isFinite(count) || count <= 0) continue;
+    // "a card" or "2 cards" counts cards without naming them.
+    if (/^cards?$/i.test(rawName)) continue;
     const name = normalizeLogCardName(rawName, knownCards, Boolean(countMatch));
     for (let index = 0; index < count; index += 1) cards.push(name);
   }

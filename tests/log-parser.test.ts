@@ -69,6 +69,12 @@ test("parses empty card list text as no cards", () => {
   });
 });
 
+test("anonymous cards in a topdeck log are not taken for a card named card", () => {
+  assert.deepEqual(parseTopdeckLog("L topdecks 2 cards.", ["Copper"]), { playerToken: "L", cards: [] });
+  assert.deepEqual(parseTopdeckLog("L topdecks a card.", ["Copper"]), { playerToken: "L", cards: [] });
+  assert.deepEqual(parseTopdeckLog("L topdecks a Copper and a card.", ["Copper"]), { playerToken: "L", cards: ["Copper"] });
+});
+
 test("parses reaction logs", () => {
   assert.deepEqual(parseReactionLog("L reacts with a Moat.", ["Moat"]), {
     playerToken: "L",
