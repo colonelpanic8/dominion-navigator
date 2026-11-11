@@ -50,7 +50,12 @@ function trash(zones: RuntimeZone[]): TableState["trash"] {
   return { cards: Object.fromEntries(Object.entries(cards).sort(([a], [b]) => a.localeCompare(b))), unknown };
 }
 
-function gameNumber(): string | undefined {
+/** The log opens with the game's id; the page text shows it too, but still names the previous game while a new one loads. */
+function gameNumber(game: RuntimeGame): string | undefined {
+  for (const argument of game.logModel?.entries?.[0]?.logArguments ?? []) {
+    const gameId = (argument as { argument?: { gameId?: unknown } } | null)?.argument?.gameId;
+    if (typeof gameId === "number") return String(gameId);
+  }
   return document.body?.innerText.match(/Game #(\d+)/)?.[1];
 }
 
@@ -76,7 +81,7 @@ export function summarizeTable(game: RuntimeGame): TableState {
     .map(pile)
     .filter((view): view is PileView => Boolean(view && view.count > 0));
 
-  const number = gameNumber();
+  const number = gameNumber(game);
   const players = (game.state?.players ?? [])
     .filter((player) => player.index !== undefined && player.index >= 0)
     .map((player) => ({ index: player.index!, name: player.name ?? `Player ${player.index}` }));
