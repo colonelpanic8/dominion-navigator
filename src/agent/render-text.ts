@@ -1,4 +1,5 @@
 import type { CardCounter } from "../knowledge";
+import { completedTurns, TurnSummary } from "./turn-summary";
 import { AgentView, Cost, Decision, GameResult, HandTreasure, PlayerView, ZoneView } from "./types";
 
 function cards(counter: CardCounter): string {
@@ -93,6 +94,11 @@ function score(view: AgentView): string {
   return `SCORE ${points}${piles ? `; ${piles}` : ""}`;
 }
 
+function turnLine(turn: TurnSummary): string {
+  const gained = turn.gained.length ? `, gained ${turn.gained.join(", ")}` : "";
+  return `  turn ${turn.turn} ${turn.player}: made $${turn.coins}, bought ${turn.bought.join(", ") || "nothing"}${gained}`;
+}
+
 function resultLine(value: GameResult): string {
   return `RESULT ${value.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`;
 }
@@ -138,6 +144,8 @@ function blocks(view: AgentView): Block[] {
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
+  const turns = completedTurns(view.sinceLastDecision, view.opponents.map((opponent) => opponent.name));
+  if (turns.length) result.push({ kind: "lines", key: "turns", lines: ["OPPONENT TURNS", ...turns.map(turnLine)], always: true });
   if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view.decision, pileCosts(view), turn.buys), always: true });
   return result;
 }
