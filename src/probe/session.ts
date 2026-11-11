@@ -1,3 +1,4 @@
+import { resolveKingdomNames } from "../agent/split-piles";
 import { ActionResult, SessionState } from "../agent/types";
 import {
   dominion,
@@ -88,11 +89,12 @@ function resolveKingdom(names: string[]): RuntimeCardName[] {
   const known = new Map(
     Object.values(dominion.CardNames ?? {})
       .filter((card): card is RuntimeCardName => Boolean(card?.name))
-      .map((card) => [card.name!.toLowerCase(), card])
+      .map((card) => [card.name!, card])
   );
-  const unknown = names.filter((name) => !known.has(name.toLowerCase()));
-  if (unknown.length > 0) throw new ActionError(`unknown card name(s): ${unknown.join(", ")}`);
-  return names.map((name) => known.get(name.toLowerCase())!);
+  const cards = [...known.values()].map((card) => ({ name: card.name!, types: (card.types ?? []).map((type) => type.name ?? "") }));
+  const resolved = resolveKingdomNames(names, cards);
+  if (resolved.unknown.length > 0) throw new ActionError(`unknown card name(s): ${resolved.unknown.join(", ")}`);
+  return resolved.cards.map((name) => known.get(name)!);
 }
 
 /** Rule changes round-trip through the server, so each step waits for the table to show it. */

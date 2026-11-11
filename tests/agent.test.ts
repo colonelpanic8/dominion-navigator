@@ -3,7 +3,7 @@ import test from "node:test";
 import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
 import { buildCardGlossary, normalizeCardText, viewCardNames } from "../src/agent/glossary";
-import { splitPiles } from "../src/agent/split-piles";
+import { resolveKingdomNames, splitPiles } from "../src/agent/split-piles";
 import { renderAgentViewText } from "../src/agent/render-text";
 import { completedTurns } from "../src/agent/turn-summary";
 import { RawQuestion, ZoneView } from "../src/agent/types";
@@ -186,6 +186,22 @@ test("a split pile names the cards under its top card", () => {
   const withForts = { ...live, supply: [...live.supply, forts] };
   assert.match(renderAgentViewText(withForts), /Tent \$3 x16 \(pile also holds Garrison, Hill Fort, Stronghold\)/);
   for (const card of ["Tent", "Garrison", "Hill Fort", "Stronghold"]) assert.ok(viewCardNames(withForts).has(card), card);
+});
+
+test("a kingdom names a split or paired pile by its randomizer, whichever of its names is given", () => {
+  const resolve = (...names: string[]) => resolveKingdomNames(names, cardData.cardShapedObjects);
+  assert.deepEqual(resolve("forts", "Tent", "Garrison", "Fort Pile"), { cards: ["Fort Pile"], unknown: [] });
+  assert.deepEqual(resolve("Knights", "Sir Martin", "Castles", "Humble Castle", "Augurs", "Clashes", "Odysseys", "Townsfolk", "Wizards").cards, [
+    "Knights",
+    "Castles",
+    "Augur Pile",
+    "Clash Pile",
+    "Odyssey Pile",
+    "Townsfolk Pile",
+    "Wizard Pile"
+  ]);
+  assert.deepEqual(resolve("Plunder", "Rocks", "Witch", "Borrow").cards, ["Encampment", "Catapult", "Witch", "Borrow"]);
+  assert.deepEqual(resolve("Witch", "Wotch"), { cards: ["Witch"], unknown: ["Wotch"] });
 });
 
 function knowledgeZone(knowledge: KnowledgeSummary, playerIndex: number, zoneName: string): ZoneView {

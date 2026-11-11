@@ -128,7 +128,7 @@ window.__dominionNavigator.getLog({ afterIndex: 40, limit: 50 }) // the whole ga
 window.__dominionNavigator.inspect("game.state.zones.3", { depth: 2 })
 ```
 
-`startBotGame` works from the lobby, a table, or a finished game. `kingdom` names cards and landscapes the table must use; the server fills the rest at random, and silently refuses to start a kingdom with cards the account cannot play. `inspect` dumps raw client or tracker state at a dotted path (roots: `game`, `table`, `meta`, `knowledge`, `probe`, `window`). It is for debugging: unlike the view, it is not limited to what the player may know.
+`startBotGame` works from the lobby, a table, or a finished game. `kingdom` names cards and landscapes the table must use, and a split pile by any of its cards or its plural (Tent or Forts both give the Fort pile); the server fills the rest at random, and silently refuses to start a kingdom with cards the account cannot play. `inspect` dumps raw client or tracker state at a dotted path (roots: `game`, `table`, `meta`, `knowledge`, `probe`, `window`). It is for debugging: unlike the view, it is not limited to what the player may know.
 
 ## Playing Through MCP
 

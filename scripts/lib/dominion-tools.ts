@@ -223,7 +223,11 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         type: "object",
         properties: {
           bots: { type: "integer", description: "Number of bot opponents, 1 to 3 (default 1). A chosen kingdom needs 1." },
-          kingdom: { type: "array", items: { type: "string" }, description: "Card and landscape names to require; the rest is filled at random." }
+          kingdom: {
+            type: "array",
+            items: { type: "string" },
+            description: "Card and landscape names to require; the rest is filled at random. A split pile can be named by any of its cards or as a whole, e.g. Tent or Forts."
+          }
         }
       },
       async run(args, signal) {
