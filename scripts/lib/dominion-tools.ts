@@ -26,6 +26,10 @@ const DEFAULT_WAIT_S = 60;
 const MAX_WAIT_S = 300;
 const START_GAME_TIMEOUT_MS = 90_000;
 const DEFAULT_LOG_LIMIT = 50;
+/** Log lines a delta carries before it points at the log tool instead. */
+const MAX_LOG_LINES = 80;
+/** Log lines a full view carries for context. */
+const RECENT_LOG_LINES = 30;
 const MAX_INSPECT_CHARS = 20_000;
 /** Bound on forced decisions answered in one call, in case the client keeps reopening one. */
 const MAX_AUTO_ANSWERS = 25;
@@ -69,9 +73,11 @@ function forcedAnswer(decision: Decision): number[] | undefined {
   return group.min === 1 && group.max === 1 ? [option.index] : undefined;
 }
 
+const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
+
 export function createDominionTools(client: Pick<DominionClient, "call">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
-  /** The view the caller was last shown, which deltas are taken against. */
-  let shown: AgentView | undefined;
+  /** What the caller was last shown, which deltas and new log lines are taken against. */
+  let shown: { view: AgentView; logIndex: number } | undefined;
   /** Cards whose text the caller was given in the current game. */
   let described = new Set<string>();
 
@@ -82,43 +88,54 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     return ["CARDS", ...renderGlossary(buildCardGlossary(cardData, fresh, supplyCosts(view))).map((line) => `  ${line}`)];
   };
 
-  const present = (view: AgentView, mode: "full" | "delta"): string[] => {
-    const sameGame = shown !== undefined && shown.game.number === view.game.number;
-    if (mode === "full" || !sameGame) described = new Set();
-    const body = mode === "delta" && shown && sameGame ? renderAgentViewDelta(shown, view) : renderAgentViewText(view);
-    shown = view;
-    return [body, ...cardLines(view)];
+  /**
+   * Renders a view for the caller and records it as shown. A delta needs an
+   * earlier view of the same game; without one the view is printed in full.
+   * The log comes from the game log by index, so no line is shown twice or lost
+   * to an answer made in between.
+   */
+  const present = async (view: AgentView, mode: "full" | "delta", signal: AbortSignal): Promise<string[]> => {
+    const number = view.game.number;
+    const previous = mode === "delta" && shown && number !== undefined && shown.view.game.number === number ? shown : undefined;
+    const log = await client.call("getLog", [previous ? { afterIndex: previous.logIndex, limit: MAX_LOG_LINES } : { limit: RECENT_LOG_LINES }]);
+    // A cancelled call's result is never read, so it must not count as shown.
+    signal.throwIfAborted();
+    const lines = log.entries.map((entry) => entry.text);
+    if (previous && log.entries.length === MAX_LOG_LINES) lines.unshift("(earlier lines left out; call log for them)");
+    const current = { ...view, sinceLastDecision: lines };
+    if (!previous) described = new Set();
+    const body = previous ? renderAgentViewDelta(previous.view, current) : renderAgentViewText(current);
+    shown = { view: current, logIndex: log.lastIndex };
+    return [body, ...cardLines(current)];
   };
 
-  /** Fails unless a game is on screen and, for acting in it, the opponents are ones this server may play. */
-  const requireGame = async (purpose: "watch" | "act"): Promise<void> => {
+  /** Whether this server may act in the game on screen. Fails when there is no game. */
+  const mayActInGame = async (): Promise<boolean> => {
     const session = await client.call("getSession", []);
     if (session.screen === "login") throw new Error("Nobody is logged in to dominion.games in that Chrome. Log in there first.");
     if (session.screen !== "game") throw new Error(`No game is running; the client is on the ${session.screen} screen. Call new_game.`);
-    if (purpose === "act" && !options.allowHumanOpponents && !session.game?.opponentsAreBots) {
-      throw new Error("This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.");
-    }
+    return Boolean(options.allowHumanOpponents || session.game?.opponentsAreBots);
   };
 
-  /** Waits for the next decision that needs a choice, answering forced ones on the way. */
-  const settle = async (timeoutMs: number, mode: "full" | "delta"): Promise<string> => {
+  /** Waits for the next decision that needs a choice, answering forced ones on the way when `autoAnswer` allows. */
+  const settle = async (timeoutMs: number, mode: "full" | "delta", autoAnswer: boolean, signal: AbortSignal): Promise<string> => {
     const lines: string[] = [];
     let wait: WaitResult;
     for (let answered = 0; ; answered += 1) {
       wait = await client.call("waitForDecision", [{ timeoutMs }], { timeoutMs });
+      signal.throwIfAborted();
       const decision = wait.status === "decision" ? wait.view.decision : null;
-      const forced = decision && answered < MAX_AUTO_ANSWERS ? forcedAnswer(decision) : undefined;
+      const forced = decision && autoAnswer && answered < MAX_AUTO_ANSWERS ? forcedAnswer(decision) : undefined;
       if (!decision || !forced) break;
       const result = await client.call("answer", [decision.id, forced]);
       if (!result.ok) break;
-      // The lines logged before a forced answer would otherwise be dropped with its view.
-      lines.push(...wait.view.sinceLastDecision.map((line) => `  ${line}`), `AUTO ${decision.id}: ${decision.prompt} -> ${decision.options[0]!.label}`);
+      lines.push(`AUTO ${decision.id}: ${decision.prompt} -> ${decision.options[0]!.label}`);
     }
-    if (lines.length > 0) lines.unshift("EARLIER");
-    lines.push(...present(wait.view, mode));
+    lines.push(...(await present(wait.view, mode, signal)));
     if (wait.status === "timeout") lines.push("No decision for you yet. Call wait to keep waiting.");
     if (wait.status === "game-over") lines.push("The game is over. Call new_game to play again.");
     if (wait.status === "spectating") lines.push("This account is spectating this game, so there is nothing to answer.");
+    if (wait.status === "decision" && !autoAnswer) lines.push(HUMAN_OPPONENTS);
     if (wait.knowledgeLag > 0) lines.push(`Card tracking is ${wait.knowledgeLag} event(s) behind this view.`);
     return lines.join("\n");
   };
@@ -132,15 +149,15 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       description:
         "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game.",
       inputSchema: { type: "object", properties: {} },
-      async run() {
+      async run(_args, signal) {
         const session = await client.call("getSession", []);
-        const lines = [describeSession(session)];
+        let view: AgentView;
         try {
-          lines.push(...present(await client.call("getAgentView", []), "full"));
+          view = await client.call("getAgentView", []);
         } catch {
-          lines.push("No game to show. Call new_game to start one against bots.");
+          return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
         }
-        return lines.join("\n");
+        return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
       }
     },
     {
@@ -156,27 +173,26 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         },
         required: ["decision", "choose"]
       },
-      async run(args) {
+      async run(args, signal) {
         const decision = text(args, "decision");
         const choose = list(args, "choose", "number");
         const timeoutMs = waitMs(args);
-        await requireGame("act");
+        if (!(await mayActInGame())) throw new Error(HUMAN_OPPONENTS);
         const result = await client.call("answer", [decision, choose]);
         if (!result.ok) {
-          const current = present(await client.call("getAgentView", []), "delta");
+          const current = await present(await client.call("getAgentView", []), "delta", signal);
           throw new Error([`Answer rejected: ${result.error}`, ...current].join("\n"));
         }
-        return settle(timeoutMs, "delta");
+        return settle(timeoutMs, "delta", true, signal);
       }
     },
     {
       name: "wait",
       description: "Waits for your next decision without answering anything, then returns what changed. Use it after a timeout or while an opponent is playing.",
       inputSchema: { type: "object", properties: { timeout_s: timeoutProperty } },
-      async run(args) {
+      async run(args, signal) {
         const timeoutMs = waitMs(args);
-        await requireGame("watch");
-        return settle(timeoutMs, "delta");
+        return settle(timeoutMs, "delta", await mayActInGame(), signal);
       }
     },
     {
@@ -190,22 +206,22 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
           kingdom: { type: "array", items: { type: "string" }, description: "Card and landscape names to require; the rest is filled at random." }
         }
       },
-      async run(args) {
+      async run(args, signal) {
         const bots = integer(args, "bots", { min: 1, max: 3 }) ?? 1;
         const kingdom = args.kingdom === undefined ? undefined : list(args, "kingdom", "string");
         const result = await client.call("startBotGame", [{ bots, ...(kingdom ? { kingdom } : {}) }], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not start a game: ${result.error}`);
-        return settle(DEFAULT_WAIT_S * 1000, "full");
+        return settle(DEFAULT_WAIT_S * 1000, "full", await mayActInGame(), signal);
       }
     },
     {
       name: "resign",
       description: "Resigns the game in progress.",
       inputSchema: { type: "object", properties: {} },
-      async run() {
+      async run(_args, signal) {
         const result = await client.call("resign", [], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not resign: ${result.error}`);
-        return present(await client.call("getAgentView", []), "delta").join("\n");
+        return (await present(await client.call("getAgentView", []), "delta", signal)).join("\n");
       }
     },
     {
@@ -232,7 +248,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       inputSchema: { type: "object", properties: { names: { type: "array", items: { type: "string" } } }, required: ["names"] },
       async run(args) {
         const names = list(args, "names", "string");
-        return renderGlossary(buildCardGlossary(cardData, names, shown ? supplyCosts(shown) : {})).join("\n");
+        return renderGlossary(buildCardGlossary(cardData, names, shown ? supplyCosts(shown.view) : {})).join("\n");
       }
     },
     {

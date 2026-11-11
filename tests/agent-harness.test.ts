@@ -11,10 +11,14 @@ import { fixtures } from "./live-fixtures";
 const [startGame, firstBuy, secondBuy] = fixtures.map((item) => item.liveView) as [AgentView, AgentView, AgentView];
 const cardData = [{ name: "Remodel", text: "Trash a card from your hand.", types: ["Action"], expansion: "Base" }];
 
-/** A page whose decisions are the queued views, recording the answers it is sent. */
+/**
+ * A page whose decisions are the queued views, recording the answers it is sent.
+ * Its log grows by each view's lines as that view becomes the open decision.
+ */
 function fakeClient(views: AgentView[], opponentsAreBots = true) {
   const answers: Array<[string, number[]]> = [];
   const session: SessionState = { screen: "game", user: "me", game: { over: false, opponentsAreBots } };
+  const log = views[0]!.sinceLastDecision.map((text, index) => ({ index, depth: 0, text }));
   const call = async (method: string, params: unknown[]): Promise<unknown> => {
     switch (method) {
       case "getSession":
@@ -23,10 +27,15 @@ function fakeClient(views: AgentView[], opponentsAreBots = true) {
         return views[0];
       case "waitForDecision":
         return { status: "decision", view: views[0], knowledgeLag: 0 };
+      case "getLog": {
+        const { afterIndex = -1, limit } = params[0] as { afterIndex?: number; limit: number };
+        return { entries: log.filter((entry) => entry.index > afterIndex).slice(-limit), lastIndex: log.length - 1 };
+      }
       case "answer":
         answers.push(params as [string, number[]]);
         if (params[0] !== views[0]!.decision!.id) return { ok: false, error: `decision ${String(params[0])} is not open` };
         views.shift();
+        for (const text of views[0]?.sinceLastDecision ?? []) log.push({ index: log.length, depth: 0, text });
         return { ok: true, decisionId: params[0] };
       default:
         throw new Error(`unexpected call ${method}`);
@@ -34,6 +43,8 @@ function fakeClient(views: AgentView[], opponentsAreBots = true) {
   };
   return { answers, client: { call } as Parameters<typeof createDominionTools>[0] };
 }
+
+const live = new AbortController().signal;
 
 function tool(tools: Tool[], name: string): Tool {
   const found = tools.find((item) => item.name === name);
@@ -64,7 +75,7 @@ test("step answers forced decisions itself and then reports only what changed", 
   const { answers, client } = fakeClient([startGame, firstBuy, secondBuy]);
   const tools = createDominionTools(client, cardData);
 
-  const first = await tool(tools, "wait").run({});
+  const first = await tool(tools, "wait").run({}, live);
   assert.deepEqual(answers, [[startGame.decision!.id, [0]]]);
   assert.match(first, new RegExp(`^AUTO ${startGame.decision!.id}: .* -> Start Game$`, "m"));
   for (const line of startGame.sinceLastDecision) assert.ok(first.includes(line), line);
@@ -72,7 +83,7 @@ test("step answers forced decisions itself and then reports only what changed", 
   assert.match(first, /^ {2}Remodel \(\$4, Action\): Trash a card from your hand\.$/m);
 
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
-  const second = await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [buy] });
+  const second = await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
   assert.deepEqual(answers.at(-1), [firstBuy.decision!.id, [buy]]);
   assert.match(second, new RegExp(`^DECISION ${secondBuy.decision!.id}: `, "m"));
   assert.doesNotMatch(second, /^CARDS$/m);
@@ -82,22 +93,22 @@ test("step answers forced decisions itself and then reports only what changed", 
 test("step refuses a stale decision and shows the one that is open", async () => {
   const { client } = fakeClient([firstBuy]);
   const tools = createDominionTools(client, cardData);
-  await assert.rejects(tool(tools, "step").run({ decision: "d999", choose: [0] }), (error: Error) => {
+  await assert.rejects(tool(tools, "step").run({ decision: "d999", choose: [0] }, live), (error: Error) => {
     assert.match(error.message, /^Answer rejected: decision d999 is not open/);
     assert.match(error.message, new RegExp(`^DECISION ${firstBuy.decision!.id}: `, "m"));
     return true;
   });
-  await assert.rejects(tool(tools, "step").run({ decision: "d2", choose: ["Silver"] }), /choose must be an array of numbers/);
+  await assert.rejects(tool(tools, "step").run({ decision: "d2", choose: ["Silver"] }, live), /choose must be an array of numbers/);
 });
 
 test("step does not act against human opponents unless that is allowed", async () => {
   const guarded = fakeClient([firstBuy], false);
-  await assert.rejects(tool(createDominionTools(guarded.client, cardData), "step").run({ decision: firstBuy.decision!.id, choose: [] }), /human opponents/);
+  await assert.rejects(tool(createDominionTools(guarded.client, cardData), "step").run({ decision: firstBuy.decision!.id, choose: [] }, live), /human opponents/);
   assert.deepEqual(guarded.answers, []);
 
   const allowed = fakeClient([firstBuy, secondBuy], false);
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
-  await tool(createDominionTools(allowed.client, cardData, { allowHumanOpponents: true }), "step").run({ decision: firstBuy.decision!.id, choose: [buy] });
+  await tool(createDominionTools(allowed.client, cardData, { allowHumanOpponents: true }), "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
   assert.equal(allowed.answers.length, 1);
 });
 
@@ -160,4 +171,42 @@ test("table notes report expansion state the view has no field for, and nothing 
     "Ann has reminders up for Bridge.",
     "Cheap is attached to Village."
   ]);
+});
+
+test("wait shows a forced decision without answering it in a game against people", async () => {
+  const { answers, client } = fakeClient([startGame, firstBuy], false);
+  const shownView = await tool(createDominionTools(client, cardData), "wait").run({}, live);
+  assert.deepEqual(answers, []);
+  assert.match(shownView, new RegExp(`^DECISION ${startGame.decision!.id}: `, "m"));
+  assert.match(shownView, /human opponents/);
+});
+
+test("a view is only a delta base once it was delivered, and log lines are shown once", async () => {
+  const { client } = fakeClient([firstBuy]);
+  const tools = createDominionTools(client, cardData);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(tool(tools, "wait").run({}, cancelled.signal));
+
+  const first = await tool(tools, "wait").run({}, live);
+  assert.match(first, /^YOU: /m);
+  assert.match(first, /^LOG$/m);
+
+  const again = await tool(tools, "wait").run({}, live);
+  assert.doesNotMatch(again, /^(YOU: |LOG$)/m);
+  assert.match(again, new RegExp(`^DECISION ${firstBuy.decision!.id}: `, "m"));
+});
+
+test("a delta says when the notes no longer apply", () => {
+  const noted: AgentView = { ...firstBuy, notes: ["This is an extra turn (outpost)."] };
+  assert.match(renderAgentViewDelta(firstBuy, noted), /^ALSO\n {2}This is an extra turn \(outpost\)\.$/m);
+  assert.match(renderAgentViewDelta(noted, firstBuy), /^ALSO nothing any more$/m);
+});
+
+test("inspect stops expanding a widely shared graph", () => {
+  const leaf = { values: Array.from({ length: 50 }, (_, index) => ({ index })) };
+  const wide = Object.fromEntries(Array.from({ length: 200 }, (_, index) => [`key${index}`, { leaf, again: { leaf } }]));
+  const dump = JSON.stringify(inspectValue(wide, { depth: 6, maxEntries: 200 }));
+  assert.ok(dump.length < 200_000, `dump is ${dump.length} characters`);
+  assert.match(dump, /"key199":/);
 });

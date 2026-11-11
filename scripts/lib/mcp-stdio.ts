@@ -8,8 +8,11 @@ export type Tool = {
   description: string;
   /** JSON Schema for the arguments object. */
   inputSchema: object;
-  /** Returns the text result; a thrown error becomes an error result the model can read. */
-  run(args: Record<string, unknown>): Promise<string>;
+  /**
+   * Returns the text result; a thrown error becomes an error result the model can
+   * read. `signal` aborts when the client cancels the call, after which the result is discarded.
+   */
+  run(args: Record<string, unknown>, signal: AbortSignal): Promise<string>;
 };
 
 export type ServerInfo = {
@@ -37,7 +40,7 @@ class RpcError extends Error {
   }
 }
 
-async function handle(server: ServerInfo, method: string, params: Record<string, unknown>): Promise<object> {
+async function handle(server: ServerInfo, method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<object> {
   switch (method) {
     case "initialize": {
       const requested = typeof params.protocolVersion === "string" ? params.protocolVersion : "";
@@ -57,7 +60,7 @@ async function handle(server: ServerInfo, method: string, params: Record<string,
       if (!tool) throw new RpcError(INVALID_PARAMS, `unknown tool ${String(params.name)}`);
       const args = params.arguments && typeof params.arguments === "object" ? (params.arguments as Record<string, unknown>) : {};
       try {
-        return { content: [{ type: "text", text: await tool.run(args) }] };
+        return { content: [{ type: "text", text: await tool.run(args, signal) }] };
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }
@@ -72,25 +75,40 @@ export function serveTools(server: ServerInfo): void {
     process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
   };
 
+  const running = new Map<number | string, AbortController>();
+
   createInterface({ input: process.stdin }).on("line", (line) => {
     if (!line.trim()) return;
-    let request: Request;
+    let request: Request | null;
     try {
-      request = JSON.parse(line) as Request;
+      request = JSON.parse(line) as Request | null;
     } catch {
       write({ id: null, error: { code: PARSE_ERROR, message: "parse error" } });
       return;
     }
+    if (typeof request !== "object" || request === null) return;
     const { id, method } = request;
-    // Responses and notifications need no reply.
+    if (method === "notifications/cancelled") {
+      running.get(request.params?.requestId as number | string)?.abort();
+      return;
+    }
+    // Responses and other notifications need no reply.
     if (method === undefined || id === undefined) return;
-    handle(server, method, request.params ?? {}).then(
-      (result) => write({ id, result }),
-      (error: unknown) =>
-        write({
+
+    const controller = new AbortController();
+    running.set(id, controller);
+    handle(server, method, request.params ?? {}, controller.signal)
+      .then(
+        (result) => ({ id, result }),
+        (error: unknown) => ({
           id,
           error: { code: error instanceof RpcError ? error.code : INTERNAL_ERROR, message: error instanceof Error ? error.message : String(error) }
         })
-    );
+      )
+      .then((response) => {
+        running.delete(id);
+        // A cancelled request gets no response.
+        if (!controller.signal.aborted) write(response);
+      });
   });
 }
