@@ -3,7 +3,7 @@ import test from "node:test";
 import { createDominionTools } from "../scripts/lib/dominion-tools";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
-import { renderAgentViewDelta, renderAgentViewText } from "../src/agent/render-text";
+import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../src/agent/render-text";
 import { tableNotes } from "../src/agent/table-notes";
 import type { AgentView, SessionState } from "../src/agent/types";
 import { fixtures } from "./live-fixtures";
@@ -97,7 +97,7 @@ test("state summarizes a finished game instead of printing its table", async () 
   const { client } = fakeClient([over]);
   const text = await tool(createDominionTools(client, cardData), "state").run({}, live);
   assert.match(text, /^GAME \d+ \(over\)$/m);
-  assert.match(text, /^RESULT 1\. colonelpanic8 30 VP, 2\. Lord Rattington 24 VP$/m);
+  assert.match(text, /^RESULT 1\. colonelpanic8 30 VP in 18 turns, 2\. Lord Rattington 24 VP in 18 turns$/m);
   assert.match(text, /^YOU: colonelpanic8 \(\d+ VP\) owns \d+ cards: /m);
   assert.match(text, /^OPPONENT: Lord Rattington \(\d+ VP\) owns \d+ cards: /m);
   assert.match(text, /Call new_game/);
@@ -287,4 +287,20 @@ test("a buy decision says which treasures the buy list leaves out or would never
   assert.match(text, new RegExp(`^ {2}NOTE the buy list only counts treasures with a fixed value.* Bank must be played first, one at a time, before buying: ${bank.index} \\(Bank\\)\\.$`, "m"));
   assert.match(text, new RegExp(`^ {2}NOTE buying a card plays only .*, so Venture may never be played\\. To play it, choose ${venture.index} \\(Venture\\) before buying\\.$`, "m"));
   assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
+});
+
+test("a result says how the game ended when the supply or a resignation shows it", () => {
+  const players = [
+    { name: "colonelpanic8", rank: 1, points: 48, turns: 17, resigned: false },
+    { name: "Lord Rattington", rank: 2, points: 18, turns: 16, resigned: false }
+  ];
+  const over = (supply: AgentView["supply"], result = { players }): string =>
+    renderGameOverText({ ...secondBuy, supply, game: { ...secondBuy.game, running: false, result } }, result).split("\n")[1]!;
+  const emptied = (...cards: string[]) => secondBuy.supply.map((pile) => (cards.includes(pile.card) ? { ...pile, count: 0 } : pile));
+
+  assert.equal(over(emptied("Province")), "RESULT 1. colonelpanic8 48 VP in 17 turns, 2. Lord Rattington 18 VP in 16 turns; ended because the Province pile ran out");
+  assert.match(over(emptied("Curse", "Moat", "Cellar")), /; ended because 3 supply piles ran out \(Curse, Moat, Cellar\)$/);
+  assert.doesNotMatch(over(emptied("Curse", "Moat")), /ended/);
+  const resigned = { players: [players[0]!, { ...players[1]!, resigned: true }] };
+  assert.match(over(secondBuy.supply, resigned), /Lord Rattington 18 VP in 16 turns \(resigned\); ended because Lord Rattington resigned$/);
 });

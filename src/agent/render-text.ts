@@ -162,8 +162,23 @@ function turnLine(turn: TurnSummary): string {
   return `  turn ${turn.turn} ${turn.player}: made $${turn.coins}, bought ${turn.bought.join(", ") || "nothing"}${gained}`;
 }
 
-function resultLine(value: GameResult): string {
-  return `RESULT ${value.players.map((item) => `${item.rank}. ${item.name} ${item.points} VP${item.resigned ? " (resigned)" : ""}`).join(", ")}`;
+/** How a finished game ended, when its result and final supply show it. */
+function endCondition(view: AgentView, value: GameResult): string | undefined {
+  const resigned = value.players.filter((item) => item.resigned).map((item) => item.name);
+  if (resigned.length) return `${resigned.join(" and ")} resigned`;
+  const emptied = view.supply.filter((pile) => pile.count === 0).map((pile) => pile.card);
+  const enders = ["Province", "Colony"].filter((card) => emptied.includes(card));
+  if (enders.length) return `the ${enders.join(" and ")} pile ran out`;
+  const piles = value.players.length >= 5 ? 4 : 3;
+  return emptied.length >= piles ? `${emptied.length} supply piles ran out (${emptied.join(", ")})` : undefined;
+}
+
+function resultLine(view: AgentView, value: GameResult): string {
+  const players = value.players.map(
+    (item) => `${item.rank}. ${item.name} ${item.points} VP in ${item.turns} turn${item.turns === 1 ? "" : "s"}${item.resigned ? " (resigned)" : ""}`
+  );
+  const ended = endCondition(view, value);
+  return `RESULT ${players.join(", ")}${ended ? `; ended because ${ended}` : ""}`;
 }
 
 /**
@@ -187,7 +202,7 @@ function blocks(view: AgentView): Block[] {
 
   const game = [`GAME ${view.game.number ?? "?"}${view.game.running ? "" : " (over)"}${view.spectating ? " (spectating)" : ""}: ${status.join(", ")}`];
   if (view.game.running) game.push(score(view));
-  if (view.game.result) game.push(resultLine(view.game.result));
+  if (view.game.result) game.push(resultLine(view, view.game.result));
 
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
@@ -222,7 +237,7 @@ export function renderGameOverText(view: AgentView, result: GameResult): string 
   const players = [...(view.you ? [["YOU", view.you] as const] : []), ...view.opponents.map((item) => ["OPPONENT", item] as const)];
   return [
     `GAME ${view.game.number ?? "?"} (over)`,
-    resultLine(result),
+    resultLine(view, result),
     ...players.map(([label, item]) => `${label}: ${item.name}${item.points !== undefined ? ` (${item.points} VP)` : ""} ${owns(item)}`)
   ].join("\n");
 }
