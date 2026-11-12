@@ -165,8 +165,13 @@ test("a game log records each answer with its reason, AUTO answers and the resul
     { type: "decision", time: undefined, game, turn: 1, decision: "d2", prompt: firstBuy.decision!.prompt, groups: ["buy", "play", "button"], chosen: [{ index: silver, label: "Silver", group: "buy" }], reason: "money first" }
   );
   assert.deepEqual(records[2].result, result);
+  const kingdom = firstBuy.supply.filter((pile) => pile.kingdom).map((pile) => pile.card);
   assert.deepEqual((await readFile(join(dir, `${game}.md`), "utf8")).trim().split("\n"), [
-    `- T0 (auto) ${startGame.decision!.groups[0]!.kind}: Start Game`,
+    `# Game ${game}`,
+    "",
+    `Players: ${firstBuy.you!.name}, ${firstBuy.opponents[0]!.name}`,
+    `Kingdom: ${kingdom.join(", ")}`,
+    "",
     "- T1 buy: Silver — money first",
     "- Result: 1. colonelpanic8 30 VP in 18 turns, 2. Lord Rattington 24 VP in 18 turns"
   ]);
