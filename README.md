@@ -159,8 +159,10 @@ node --import tsx scripts/mcp-server.ts
 
 `step` also takes an optional `reason`, a short note on why the agent chose what it did. Start the server with `--game-log-dir <dir>` (or set `DOMINION_GAME_LOG_DIR`) to keep a log of each game under that directory, named by game number:
 
-- `<game>.jsonl` has one JSON record per line: a `decision` record for each answered decision (time, game number, turn, decision id and prompt, group kinds, the chosen options' labels, numbers and groups, and the `reason` if one was given), an `auto` record for each decision answered for the agent, and a `result` record once the game's result is shown.
-- `<game>.md` has one readable line per record, such as `- T5 buy: Silver — money before Gold`.
+- `<game>.jsonl` has one JSON record per line: a `start` record before the game's first entry (repeated if the server restarts mid-game) with the extension build (commit, dirty, build time), the server's version and commit, and the caller's metadata; a `decision` record for each answered decision (time, game number, turn, decision id and prompt, group kinds, the chosen options' labels, numbers and groups, and the `reason` if one was given), an `auto` record for each decision answered for the agent, and a `result` record once the game's result is shown.
+- `<game>.md` opens with the game number, players, kingdom, landscapes and those versions, then has one readable line per answered decision, such as `- T5 buy: Silver — money before Gold`. Answers made for the agent are left out of it.
+
+Pass `--game-log-meta '<json object>'` (or set `DOMINION_GAME_LOG_META`) to record what the server cannot see for itself, such as the agent's model and the commit of the context it played with.
 
 Without the flag nothing is written. A failed write is reported on stderr and never fails the tool call.
 
