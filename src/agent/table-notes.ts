@@ -60,7 +60,10 @@ export function tableNotes(state: RuntimeState | undefined, landscapes: Readonly
     const owner = seated(counter.owner);
     // A seated player's own counters are already reported with that player.
     if (!name || !counter.value || (owner && !on)) continue;
-    notes.push(`${owner ? `${owner} has ` : ""}${name} ${counter.value}${on ? ` on ${on}` : ""}.`);
+    const amount = `${counter.value} ${name.replace(/ tokens$/i, counter.value === 1 ? " token" : " tokens")}`;
+    const place = on && (counter.associatedPile && landscapes.has(counter.associatedPile) ? on : `the ${on} pile`);
+    if (owner) notes.push(`${owner} has ${amount} on ${place}.`);
+    else notes.push(place ? `${place.charAt(0).toUpperCase()}${place.slice(1)} has ${amount}.` : `The table has ${amount}, not on any pile.`);
   }
 
   for (const player of state?.players ?? []) {

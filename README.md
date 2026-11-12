@@ -108,7 +108,7 @@ await window.__dominionNavigator.waitForDecision({ timeoutMs: 60000 })
 window.__dominionNavigator.answer(decisionId, [optionIndex, ...])
 ```
 
-The view combines public table state (supply, landscapes, trash, counters) with per-player card knowledge taken only from the knowledge model, so it never contains hidden information the player could not know. `decision` lists the open question's option groups and options. Card options carry their current cost and are listed by cost, then name, so the same cards always list alike. When the groups are alternatives (the client's question is an OR), `decision.alternatives` lists the groups each alternative holds. A split or mixed pile, such as Forts or Knights, lists its other cards under `others`. `answer` only accepts option indices for a decision that is still open, enforces each group's min/max, and refuses to act when the account is spectating. The turn phase is derived from the open decision, since the client does not track it.
+The view combines public table state (supply, landscapes, trash, counters) with per-player card knowledge taken only from the knowledge model, so it never contains hidden information the player could not know. `decision` lists the open question's option groups and options. Card options carry their current cost and are listed by cost, then name, so the same cards always list alike. `turn.treasureInHand.made` gives what each fixed-value Treasure in hand makes, and the text rendering shows that on Treasures to play (`Silver +$2`) instead of their cost, or nothing for one whose value is not fixed. When the groups are alternatives (the client's question is an OR), `decision.alternatives` lists the groups each alternative holds. A split or mixed pile, such as Forts or Knights, lists its other cards under `others`. `answer` only accepts option indices for a decision that is still open, enforces each group's min/max, and refuses to act when the account is spectating. The turn phase is derived from the open decision, since the client does not track it.
 
 `scripts/agent-play.ts` plays the current game through this API with a pluggable policy (`src/agent/policy.ts`). The included `big-money` policy plays treasures and buys Province at $8, Gold at $6-7 and Silver at $3-5, with an optional terminal Action:
 
@@ -143,7 +143,7 @@ node --import tsx scripts/mcp-server.ts
 | Tool | What it does |
 | --- | --- |
 | `state` | The client's screen and, in a game, the whole table plus the text of every card in it. A finished game shows only its result and each player's cards. |
-| `step` | Answers the open decision with option numbers, waits for the next decision, and returns what changed. |
+| `step` | Answers the open decision by option label or number, waits for the next decision, and returns what changed. |
 | `wait` | Waits for the next decision without answering. |
 | `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
 | `resign` | Resigns the game in progress. |
@@ -151,9 +151,18 @@ node --import tsx scripts/mcp-server.ts
 | `cards` | Card text, types and current cost by name. |
 | `inspect` | Raw client or tracker state at a path, for debugging. |
 
+`step` takes each option as a label or a number. Labels are the safer default, because a card's number can change between decisions. A label matches without case (`"Silver"`), may carry its group kind to pick between groups (`"buy:Silver"`, `"play:Copper"`), and takes one more matching option each time it is repeated (`["Copper", "Copper"]`). A label that matches nothing, or options that are not interchangeable, fails without acting and lists the options. Labels are resolved by the MCP server; the page API takes option numbers only.
+
 `step` first echoes what it chose by label, as a `CHOSE` line. `step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
 
 `step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
+
+`step` also takes an optional `reason`, a short note on why the agent chose what it did. Start the server with `--game-log-dir <dir>` (or set `DOMINION_GAME_LOG_DIR`) to keep a log of each game under that directory, named by game number:
+
+- `<game>.jsonl` has one JSON record per line: a `decision` record for each answered decision (time, game number, turn, decision id and prompt, group kinds, the chosen options' labels, numbers and groups, and the `reason` if one was given), an `auto` record for each decision answered for the agent, and a `result` record once the game's result is shown.
+- `<game>.md` has one readable line per record, such as `- T5 buy: Silver — money before Gold`.
+
+Without the flag nothing is written. A failed write is reported on stderr and never fails the tool call.
 
 An extra turn is marked on the status line, as in `turn 12 (extra turn: seize the day)`, and a pile's Trait on the pile and on options for its cards, as in `Old Witch $5 [trait: Reckless]`. A finished game's `RESULT` gives each player's turns and, when the supply or a resignation shows it, how the game ended. In the buy phase, a `NOTE` names the unplayed treasures the buy list does not count (a value that is not fixed, such as Bank's) or that buying would never play (one that does more than make money), with the options that play them.
 

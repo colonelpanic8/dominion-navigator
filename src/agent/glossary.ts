@@ -1,3 +1,4 @@
+import { splitPiles } from "./split-piles";
 import { AgentView, CardGlossary, Cost } from "./types";
 
 /** The shape of `cardShapedObjects` entries in data/dominion-card-shaped-objects.json. */
@@ -29,16 +30,23 @@ export function normalizeCardText(text: string | null): string {
 /** Glossary entries for the named cards, with costs from the live supply where known. */
 export function buildCardGlossary(cardData: CardDataEntry[], names: Iterable<string>, costs: Record<string, Cost> = {}): CardGlossary {
   const byName = new Map(cardData.map((entry) => [entry.name.toLowerCase(), entry]));
+  const text = (name: string): string => normalizeCardText(byName.get(name.toLowerCase())?.text ?? null);
+  const piles = splitPiles(cardData);
   const glossary: CardGlossary = {};
-  for (const name of [...new Set(names)].sort((a, b) => a.localeCompare(b))) {
+  const wanted = new Set(names);
+  for (const name of [...wanted].sort((a, b) => a.localeCompare(b))) {
     const entry = byName.get(name.toLowerCase());
     const cost = costs[name];
+    const members = entry?.types.includes("Randomizer") ? piles.get(entry.name) : undefined;
+    // A randomizer with no text of its own, such as the Ruin Pile, is described by the cards it holds.
+    const listed = members?.every((member) => wanted.has(member));
+    const pileText = members?.length ? `A pile of these cards: ${members.map((member) => (listed ? member : `${member}: ${text(member)}`)).join(listed ? ", " : "; ")}` : "";
     glossary[name] = {
       name,
       types: entry?.types ?? [],
       ...(entry?.expansion ? { expansion: entry.expansion } : {}),
       ...(cost ? { cost } : {}),
-      text: normalizeCardText(entry?.text ?? null)
+      text: text(name) || pileText
     };
   }
   return glossary;

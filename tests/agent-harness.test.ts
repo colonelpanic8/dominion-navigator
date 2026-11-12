@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolveChoose } from "../scripts/lib/choose-labels";
 import { createDominionTools } from "../scripts/lib/dominion-tools";
+import { GameLog } from "../scripts/lib/game-log";
 import type { Tool } from "../scripts/lib/mcp-stdio";
 import { inspectPath, inspectValue } from "../src/agent/inspect";
 import { renderAgentViewDelta, renderAgentViewText, renderGameOverText } from "../src/agent/render-text";
@@ -112,7 +117,66 @@ test("step refuses a stale decision and shows the one that is open", async () =>
     assert.match(error.message, new RegExp(`^DECISION ${firstBuy.decision!.id}: `, "m"));
     return true;
   });
-  await assert.rejects(tool(tools, "step").run({ decision: "d2", choose: ["Silver"] }, live), /choose must be an array of numbers/);
+  await assert.rejects(tool(tools, "step").run({ decision: "d999", choose: ["Silver"] }, live), /Answer rejected: decision d999 is not open/);
+  await assert.rejects(tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: [true] }, live), /choose must be an array of option numbers or option labels/);
+});
+
+test("step chooses options by label, and refuses a label that is unknown or names different options", async () => {
+  const decision = firstBuy.decision!;
+  const index = (kind: string, label: string): number[] =>
+    decision.options.filter((option) => option.label === label && decision.groups[option.group]!.kind === kind).map((option) => option.index);
+  const coppers = index("play", "Copper");
+  assert.deepEqual(resolveChoose(decision, ["play:Copper", coppers[0]!, "PLAY:copper"]), [coppers[1], coppers[0], coppers[2]]);
+  assert.deepEqual(resolveChoose(decision, ["silver", "Autoplay Treasures"]), [...index("buy", "Silver"), ...index("button", "Autoplay Treasures")]);
+  assert.throws(() => resolveChoose(decision, ["Copper"]), /"Copper" is ambiguous in d2: buy:Copper \(3\), play:Copper \(15\), .*Prefix the label with its group kind, e.g. "buy:Copper"/);
+  assert.throws(() => resolveChoose(decision, ["Slver"]), /"Slver" names no option of d2\. Options: buy:Bandit \(0\), /);
+  assert.throws(() => resolveChoose(decision, Array(coppers.length + 1).fill("play:Copper")), /all are already chosen/);
+
+  const { answers, client } = fakeClient([firstBuy, secondBuy]);
+  const tools = createDominionTools(client, cardData);
+  await assert.rejects(tool(tools, "step").run({ decision: decision.id, choose: ["Copper"] }, live), /ambiguous/);
+  assert.deepEqual(answers, []);
+  const result = await tool(tools, "step").run({ decision: decision.id, choose: ["buy:silver"] }, live);
+  assert.deepEqual(answers, [[decision.id, index("buy", "Silver")]]);
+  assert.ok(result.startsWith(`CHOSE ${decision.id}: [buy] Silver\n`));
+});
+
+test("a game log records each answer with its reason, AUTO answers and the result, and never fails a call", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "dominion-game-log-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const gameLog = new GameLog(dir);
+  const { client } = fakeClient([startGame, firstBuy, secondBuy]);
+  const tools = createDominionTools(client, cardData, { gameLog });
+  await tool(tools, "wait").run({}, live);
+  await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: ["buy:Silver"], reason: "money first" }, live);
+  const result = { players: [{ name: "colonelpanic8", rank: 1, points: 30, turns: 18, resigned: false }, { name: "Lord Rattington", rank: 2, points: 24, turns: 18, resigned: false }] };
+  const over: AgentView = { ...secondBuy, game: { ...secondBuy.game, running: false, result }, decision: null };
+  const finished = createDominionTools(fakeClient([over]).client, cardData, { gameLog });
+  await tool(finished, "state").run({}, live);
+  await tool(finished, "state").run({}, live);
+  await gameLog.flush();
+
+  const game = firstBuy.game.number!;
+  const records = (await readFile(join(dir, `${game}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(records.map((record) => record.type), ["auto", "decision", "result"]);
+  const silver = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
+  assert.deepEqual(
+    { ...records[1], time: undefined },
+    { type: "decision", time: undefined, game, turn: 1, decision: "d2", prompt: firstBuy.decision!.prompt, groups: ["buy", "play", "button"], chosen: [{ index: silver, label: "Silver", group: "buy" }], reason: "money first" }
+  );
+  assert.deepEqual(records[2].result, result);
+  assert.deepEqual((await readFile(join(dir, `${game}.md`), "utf8")).trim().split("\n"), [
+    `- T0 (auto) ${startGame.decision!.groups[0]!.kind}: Start Game`,
+    "- T1 buy: Silver — money first",
+    "- Result: 1. colonelpanic8 30 VP in 18 turns, 2. Lord Rattington 24 VP in 18 turns"
+  ]);
+
+  const errors = t.mock.method(console, "error", () => {});
+  const broken = new GameLog(join(dir, `${game}.md`));
+  const { client: other } = fakeClient([firstBuy, secondBuy]);
+  await tool(createDominionTools(other, cardData, { gameLog: broken }), "step").run({ decision: firstBuy.decision!.id, choose: ["buy:Silver"] }, live);
+  await broken.flush();
+  assert.match(String(errors.mock.calls[0]?.arguments[0]), /could not write the game log/);
 });
 
 test("step does not act against human opponents unless that is allowed", async () => {
@@ -140,6 +204,20 @@ test("inspect bounds cyclic client objects and follows paths through maps", () =
   assert.deepEqual(inspectPath({ game: () => state }, "game.costs.Copper"), { ok: true, path: "game.costs.Copper", value: { coin: 0 } });
   assert.deepEqual(inspectPath({ game: () => state }, "game.cards.3.cardName"), { ok: false, error: "game.cards.3 is undefined" });
   assert.match((inspectPath({ game: () => state }, "nope") as { error: string }).error, /roots are game/);
+});
+
+test("table notes give a pile's counters to the pile and a player's to the player", () => {
+  const ann = { index: 0, name: "Ann" };
+  const nobody = { index: -1 };
+  const temple = { pileName: { name: "Temple" } };
+  const state = {
+    players: [ann],
+    counters: [
+      { counterName: { name: "VP Tokens" }, owner: nobody, value: 1, associatedPile: temple, associatedCard: null },
+      { counterName: { name: "Debt Tokens" }, owner: ann, value: 2, associatedPile: temple, associatedCard: null }
+    ]
+  };
+  assert.deepEqual(tableNotes(state), ["The Temple pile has 1 VP token.", "Ann has 2 Debt tokens on the Temple pile."]);
 });
 
 test("table notes report expansion state the view has no field for, and nothing in a plain game", () => {
@@ -177,8 +255,8 @@ test("table notes report expansion state the view has no field for, and nothing 
   assert.deepEqual(tableNotes(busy), [
     "Bob controls this turn.",
     "Bob's +Action token is on Village.",
-    "Embargo Tokens 1 on Village.",
-    "VP Tokens 3 on Temple.",
+    "The Village pile has 1 Embargo token.",
+    "The Temple pile has 3 VP tokens.",
     "Ann has bought Cathedral.",
     "Ann has reminders for Bridge (a reminder is a card whose effect is still pending for that player)."
   ]);
@@ -203,7 +281,7 @@ test("table notes name landscape piles by their card and say when a token is on 
     "Ann has their -Card token, not on a pile.",
     "Journey token (face down) is not on a pile.",
     "Ann's Estate token is on their Tavern mat.",
-    "VP Tokens 12 on Battlefield."
+    "Battlefield has 12 VP tokens."
   ]);
 });
 
@@ -307,6 +385,24 @@ test("a buy decision says which treasures the buy list leaves out or would never
   assert.match(text, new RegExp(`^ {2}NOTE the buy list only counts treasures with a fixed value.* Bank must be played first, one at a time, before buying: ${bank.index} \\(Bank\\)\\.$`, "m"));
   assert.match(text, new RegExp(`^ {2}NOTE buying a card plays only .*, so Venture may never be played\\. To play it, choose ${venture.index} \\(Venture\\) before buying\\.$`, "m"));
   assert.doesNotMatch(renderAgentViewText(firstBuy), /^ {2}NOTE /m);
+});
+
+test("a treasure to play shows what it makes, not what it costs", () => {
+  const decision = firstBuy.decision!;
+  const playGroup = decision.groups.find((group) => group.kind === "play")!.group;
+  const extra = ["Bank", "Remodel"].map((card, offset) => ({ index: decision.options.length + offset, group: playGroup, kind: "card" as const, label: card, card }));
+  const view: AgentView = {
+    ...firstBuy,
+    turn: { ...firstBuy.turn, treasureInHand: { coins: 5, potions: 0, variable: ["Bank"], made: { Copper: { coins: 1, potions: 0 } } } },
+    decision: { ...decision, options: [...decision.options, ...extra] }
+  };
+  const text = renderAgentViewText(view);
+  const copper = decision.options.find((option) => option.group === playGroup && option.card === "Copper")!;
+  assert.match(text, new RegExp(`^ {4}${copper.index}: Copper \\+\\$1$`, "m"));
+  assert.match(text, new RegExp(`^ {4}${extra[0]!.index}: Bank$`, "m"));
+  assert.match(text, new RegExp(`^ {4}${extra[1]!.index}: Remodel \\$4$`, "m"));
+  const silver = decision.options.find((option) => option.card === "Silver")!;
+  assert.match(text, new RegExp(`^ {4}${silver.index}: Silver \\$3$`, "m"));
 });
 
 test("a result says how the game ended when the supply or a resignation shows it", () => {

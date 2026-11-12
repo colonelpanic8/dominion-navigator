@@ -116,7 +116,18 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   return notes;
 }
 
-/** Every card option carries its cost, from the client or else from its pile, and a landscape its type. */
+/** What playing a Treasure makes, empty for one whose value is not fixed, or undefined for a card that is no Treasure. */
+function treasureMakes(view: AgentView, card: string): string | undefined {
+  const hand = view.turn.treasureInHand;
+  const made = hand?.made?.[card];
+  if (made) return [made.coins || !made.potions ? `+$${made.coins}` : "", made.potions ? `+${made.potions}P` : ""].filter(Boolean).join(" ");
+  return hand?.variable.includes(card) || pileTypes(view).get(card)?.includes("Treasure") ? "" : undefined;
+}
+
+/**
+ * Every card option carries its cost, from the client or else from its pile, and a landscape its type.
+ * A Treasure to play shows what it makes instead.
+ */
 function decision(view: AgentView, value: Decision): string[] {
   const costs = pileCosts(view);
   const cardTraits = traits(view);
@@ -136,10 +147,11 @@ function decision(view: AgentView, value: Decision): string[] {
     if (multipleGroups) lines.push(`  [${group.kind}] ${group.prompt} (${bounds})`);
     else lines.push(`  ${bounds}`);
     for (const option of value.options.filter((item) => item.group === group.group)) {
-      const price = option.cost ?? (option.card ? costs.get(option.card) : undefined);
+      const makes = group.kind === "play" && option.card ? treasureMakes(view, option.card) : undefined;
+      const price = makes ?? cost(option.cost ?? (option.card ? costs.get(option.card) : undefined));
       const landscape = option.card ? landscapeTypes.get(option.card) : undefined;
       lines.push(
-        `    ${option.index}: ${option.label}${price ? ` ${cost(price)}` : ""}${traitLabel(option.card && cardTraits.get(option.card))}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
+        `    ${option.index}: ${option.label}${price ? ` ${price}` : ""}${traitLabel(option.card && cardTraits.get(option.card))}${landscape ? ` [${landscape}]` : ""}${option.kind === "decline" ? " (decline)" : ""}`
       );
     }
   }

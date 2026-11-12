@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAgentView } from "../src/agent/agent-view";
 import { buildDecision, resolveAnswer } from "../src/agent/decisions";
-import { buildCardGlossary, normalizeCardText, viewCardNames } from "../src/agent/glossary";
+import { buildCardGlossary, normalizeCardText, renderGlossary, viewCardNames } from "../src/agent/glossary";
 import { resolveKingdomNames, splitPiles } from "../src/agent/split-piles";
 import { renderAgentViewText } from "../src/agent/render-text";
 import { completedTurns } from "../src/agent/turn-summary";
@@ -186,6 +186,17 @@ test("a split pile names the cards under its top card", () => {
   const withForts = { ...live, supply: [...live.supply, forts] };
   assert.match(renderAgentViewText(withForts), /Tent \$3 x16 \(pile also holds Garrison, Hill Fort, Stronghold\)/);
   for (const card of ["Tent", "Garrison", "Hill Fort", "Stronghold"]) assert.ok(viewCardNames(withForts).has(card), card);
+});
+
+test("a randomizer pile is described by the cards it holds", () => {
+  const piles = splitPiles(cardData.cardShapedObjects);
+  const ruins = ["Abandoned Mine", "Ruined Library", "Ruined Market", "Ruined Village", "Survivors"];
+  assert.deepEqual(piles.get("Ruin Pile"), ruins);
+  const [line] = renderGlossary(buildCardGlossary(cardData.cardShapedObjects, ["Ruin Pile"]));
+  assert.match(line!, /^Ruin Pile \(Action-Ruins-Randomizer\): A pile of these cards: Abandoned Mine: \+\$1; Ruined Library: \+1 Card; /);
+  for (const card of ruins) assert.ok(line!.includes(`${card}: `), card);
+  const [withMembers] = renderGlossary(buildCardGlossary(cardData.cardShapedObjects, ["Ruin Pile", ...ruins])).filter((item) => item.startsWith("Ruin Pile"));
+  assert.equal(withMembers, `Ruin Pile (Action-Ruins-Randomizer): A pile of these cards: ${ruins.join(", ")}`);
 });
 
 test("a kingdom names a split or paired pile by its randomizer, whichever of its names is given", () => {
