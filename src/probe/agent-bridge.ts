@@ -1,3 +1,4 @@
+import { BUILD } from "../build-info";
 import { buildAgentView } from "../agent/agent-view";
 import { renderAgentViewText } from "../agent/render-text";
 import { AgentView, GameResult, LogEntry, LogPage, RawQuestion, TableState } from "../agent/types";
@@ -120,7 +121,7 @@ export class AgentBridge {
     const table = live ?? this.lastTable;
     if (!table) throw new Error("Dominion game service is not ready yet.");
     const decision = live && !result && table.playerMeIndex !== undefined ? (openDecisions(game)[0]?.decision ?? null) : null;
-    return buildAgentView({
+    const view = buildAgentView({
       table: result ? { ...table, running: false, result } : table,
       knowledge: this.knowledge,
       decision,
@@ -128,6 +129,7 @@ export class AgentBridge {
         .map((entry) => entry.text)
         .slice(-MAX_LOG_LINES)
     });
+    return { ...view, producer: { name: "dominion-navigator", ...(BUILD ? { build: BUILD } : {}) } };
   }
 
   getAgentViewText(): string {

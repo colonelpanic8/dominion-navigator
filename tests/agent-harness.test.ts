@@ -144,7 +144,7 @@ test("step chooses options by label, and refuses a label that is unknown or name
 test("a game log records each answer with its reason, AUTO answers and the result, and never fails a call", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "dominion-game-log-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const gameLog = new GameLog(dir);
+  const gameLog = new GameLog(dir, { model: "opus", agents: { commit: "abc123", dirty: false } });
   const { client } = fakeClient([startGame, firstBuy, secondBuy]);
   const tools = createDominionTools(client, cardData, { gameLog });
   await tool(tools, "wait").run({}, live);
@@ -158,19 +158,25 @@ test("a game log records each answer with its reason, AUTO answers and the resul
 
   const game = firstBuy.game.number!;
   const records = (await readFile(join(dir, `${game}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(records.map((record) => record.type), ["auto", "decision", "result"]);
+  assert.deepEqual(records.map((record) => record.type), ["start", "auto", "decision", "result"]);
+  assert.deepEqual(records[0].context, { model: "opus", agents: { commit: "abc123", dirty: false } });
   const silver = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
   assert.deepEqual(
-    { ...records[1], time: undefined },
+    { ...records[2], time: undefined },
     { type: "decision", time: undefined, game, turn: 1, decision: "d2", prompt: firstBuy.decision!.prompt, groups: ["buy", "play", "button"], chosen: [{ index: silver, label: "Silver", group: "buy" }], reason: "money first" }
   );
-  assert.deepEqual(records[2].result, result);
+  assert.deepEqual(records[3].result, result);
   const kingdom = firstBuy.supply.filter((pile) => pile.kingdom).map((pile) => pile.card);
   assert.deepEqual((await readFile(join(dir, `${game}.md`), "utf8")).trim().split("\n"), [
     `# Game ${game}`,
     "",
     `Players: ${firstBuy.you!.name}, ${firstBuy.opponents[0]!.name}`,
     `Kingdom: ${kingdom.join(", ")}`,
+    "",
+    "Versions:",
+    "- model: opus",
+    "- agents.commit: abc123",
+    "- agents.dirty: false",
     "",
     "- T1 buy: Silver — money first",
     "- Result: 1. colonelpanic8 30 VP in 18 turns, 2. Lord Rattington 24 VP in 18 turns"

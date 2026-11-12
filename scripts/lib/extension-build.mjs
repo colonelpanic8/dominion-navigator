@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +12,20 @@ const entryPoints = [
   { source: "src/page-probe.ts", output: "page-probe.js" }
 ];
 
+/** The commit a build comes from, so a game log can say which extension produced it. */
+export function buildInfo() {
+  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+  try {
+    return { commit: git("rev-parse", "HEAD"), dirty: git("status", "--porcelain").length > 0, builtAt: new Date().toISOString() };
+  } catch {
+    return { commit: "unknown", dirty: false, builtAt: new Date().toISOString() };
+  }
+}
+
 export function esbuildConfigs(extra = {}) {
+  const define = { __NAVIGATOR_BUILD__: JSON.stringify(buildInfo()) };
   return entryPoints.map(({ source, output }) => ({
+    define,
     bundle: true,
     format: "iife",
     platform: "browser",

@@ -1,3 +1,4 @@
+import type { BuildInfo } from "../build-info";
 import type { CardCounter } from "../knowledge";
 
 export const AGENT_VIEW_SCHEMA = "dominion-navigator/agent-view@1";
@@ -182,6 +183,12 @@ export type GameResult = {
   players: Array<{ name: string; rank: number; points: number; turns: number; resigned: boolean }>;
 };
 
+export type ProducerInfo = {
+  name: "dominion-navigator";
+  /** The extension build serving the view; absent outside a bundle. */
+  build?: BuildInfo;
+};
+
 export type AgentView = {
   schema: typeof AGENT_VIEW_SCHEMA;
   game: { number?: string; running: boolean; result?: GameResult };
@@ -197,6 +204,8 @@ export type AgentView = {
   notes?: string[];
   decision: Decision | null;
   sinceLastDecision: string[];
+  /** Which program produced the view. */
+  producer?: ProducerInfo;
 };
 
 export type GlossaryEntry = {
