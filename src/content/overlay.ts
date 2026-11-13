@@ -1,4 +1,5 @@
 import { findPlayerKnowledge, KnowledgeSummary, PlayerDeckKnowledge, zoneKey } from "../knowledge";
+import type { AgentStatus, LauncherReply } from "../agent/launcher-protocol";
 import { CardMoveSummary, NavigatorSnapshot } from "../messages";
 import {
   counterTotal,
@@ -23,6 +24,17 @@ export type OverlayHandlers = {
   /** Whether an agent holding this tab's token may still play. */
   agentTokenActive: () => boolean;
   onTakeBack: () => void;
+  /** Starts and follows agents through the Dominion launcher, in the Chrome it started. */
+  agents: AgentControls;
+};
+
+export type AgentRequest = { kind: "ask"; question: string } | { kind: "play" };
+
+export type AgentControls = {
+  available: () => boolean;
+  start: (request: AgentRequest) => Promise<LauncherReply>;
+  status: () => Promise<LauncherReply>;
+  stop: (agentId: string) => Promise<LauncherReply>;
 };
 
 export type Overlay = {
@@ -156,6 +168,33 @@ function renderMoveItem(move: CardMoveSummary): HTMLElement {
   return item;
 }
 
+const AGENT_KIND_LABELS = { ask: "Question", play: "Take-over" } as const;
+
+function renderAgent(agent: AgentStatus, onStop: (id: string) => void): HTMLElement {
+  const entry = document.createElement("div");
+  entry.className = "agent-entry";
+  const head = document.createElement("div");
+  head.className = "agent-head";
+  const title = document.createElement("span");
+  const moves = agent.kind === "play" ? ` · ${agent.moves} moves` : "";
+  title.textContent = `${AGENT_KIND_LABELS[agent.kind]} · ${agent.state}${moves}`;
+  head.append(title);
+  if (agent.state === "running") {
+    const stop = document.createElement("button");
+    stop.className = "text-button";
+    stop.textContent = "Stop";
+    stop.title = "Stop this agent now";
+    stop.addEventListener("click", () => onStop(agent.id));
+    head.append(stop);
+  }
+  const body = document.createElement("div");
+  body.className = "agent-text";
+  body.textContent = agent.error ?? (agent.state === "running" && agent.kind === "play" ? agent.lastReason : agent.text) ?? agent.text ?? "";
+  body.title = `Log: ${agent.logPath}`;
+  entry.append(head, body);
+  return entry;
+}
+
 export function createOverlay(handlers: OverlayHandlers, options: { identityRepairEnabled: boolean }): Overlay {
   const root = document.createElement("section");
   root.id = "dominion-navigator-root";
@@ -182,6 +221,10 @@ export function createOverlay(handlers: OverlayHandlers, options: { identityRepa
   const advisorTakeBack = element<HTMLButtonElement>("#advisor-take-back");
   const advisorStatus = element("#advisor-status");
   const advisorPrompt = element("#advisor-prompt");
+  const agentButtons = element("#agent-buttons");
+  const agentAsk = element<HTMLButtonElement>("#agent-ask");
+  const agentPlay = element<HTMLButtonElement>("#agent-play");
+  const agentList = element("#agent-list");
 
   toggleButton.addEventListener("click", () => {
     const isCollapsed = panelElement.classList.toggle("collapsed");
@@ -203,6 +246,7 @@ export function createOverlay(handlers: OverlayHandlers, options: { identityRepa
   // Keys typed here are the overlay's, not shortcuts for the game underneath.
   advisorQuestion.addEventListener("keydown", (event) => event.stopPropagation());
 
+  let agentPoll: ReturnType<typeof setTimeout> | undefined;
   /** Copies a prompt for the player to paste into an agent, and shows it in case the clipboard refuses. */
   const showTakeBack = (): void => {
     advisorTakeBack.classList.toggle("hidden", !handlers.agentTokenActive());
@@ -226,12 +270,47 @@ export function createOverlay(handlers: OverlayHandlers, options: { identityRepa
   advisorPlay.addEventListener("click", () => copyPrompt(handlers.agentPrompt({ kind: "play" })));
   advisorTakeBack.addEventListener("click", () => {
     handlers.onTakeBack();
+    clearTimeout(agentPoll);
+    agentList.replaceChildren();
+    agentList.classList.add("hidden");
     showTakeBack();
     advisorPrompt.classList.add("hidden");
     advisorStatus.classList.remove("hidden");
     advisorStatus.textContent = "Taken back. The agent's token no longer works, so its next move is refused.";
   });
   showTakeBack();
+
+  const renderAgents = (reply: LauncherReply): void => {
+    const agents = reply.agents ?? [];
+    agentList.replaceChildren(...agents.slice(-3).map((agent) => renderAgent(agent, (id) => void handlers.agents.stop(id).then(renderAgents))));
+    agentList.classList.toggle("hidden", agents.length === 0);
+    if (!reply.ok) {
+      advisorStatus.classList.remove("hidden");
+      advisorStatus.textContent = reply.error;
+    }
+    showTakeBack();
+    clearTimeout(agentPoll);
+    if (agents.some((agent) => agent.state === "running")) agentPoll = setTimeout(() => void handlers.agents.status().then(renderAgents), 2500);
+  };
+  const startAgent = (request: AgentRequest): void => {
+    advisorPrompt.classList.add("hidden");
+    advisorStatus.classList.remove("hidden");
+    advisorStatus.textContent = "Starting an agent...";
+    void handlers.agents.start(request).then((reply) => {
+      if (reply.ok) advisorStatus.textContent = request.kind === "play" ? "The agent has the game. Take Back stops it." : "The agent is answering.";
+      renderAgents(reply);
+    });
+  };
+  agentAsk.addEventListener("click", () => startAgent({ kind: "ask", question: advisorQuestion.value }));
+  agentPlay.addEventListener("click", () => startAgent({ kind: "play" }));
+  // The launcher binds each tab just after it opens, so look again once the tab has settled.
+  const showAgentButtons = (): void => {
+    const available = handlers.agents.available();
+    agentButtons.classList.toggle("hidden", !available);
+    if (available && handlers.agentTokenActive()) void handlers.agents.status().then(renderAgents);
+  };
+  showAgentButtons();
+  for (const delay of [1000, 3000, 8000]) setTimeout(showAgentButtons, delay);
 
   return {
     root,

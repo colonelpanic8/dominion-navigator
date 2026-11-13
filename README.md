@@ -66,12 +66,24 @@ Launch a dedicated Chrome profile with the unpacked extension loaded:
 npm run launch:chrome
 ```
 
-Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. The launcher accepts these environment variables:
+Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. One launcher owns the profile: running it again while it is up opens another `dominion.games` tab in its Chrome and exits.
 
-- `CHROME`: Chrome binary (default `google-chrome-stable` on `PATH`).
-- `DOMINION_NAVIGATOR_CHROME_PROFILE`: profile directory (default `/tmp/dominion-navigator-chrome-profile4`).
+The launcher and the scripts read their settings from `$XDG_CONFIG_HOME/dominion-navigator/config.json` (or the file `DOMINION_NAVIGATOR_CONFIG` names). Every key is optional:
+
+```json
+{
+  "chrome": { "profile": "~/.local/state/dominion-navigator/chrome-profile", "debugPort": 9226, "binary": "google-chrome-stable", "url": "https://dominion.games/" },
+  "agent": { "command": "claude", "cwd": "~/projects/dominion-playbook", "model": "opus", "allowHumanOpponents": false, "allowedTools": ["mcp__dominion", "Read", "Glob", "Grep", "Skill"], "extraArgs": [] }
+}
+```
+
+These environment variables override the file:
+
+- `CHROME`: Chrome binary.
+- `DOMINION_NAVIGATOR_CHROME_PROFILE`: profile directory (default `$XDG_STATE_HOME/dominion-navigator/chrome-profile`, so the dominion.games login survives a reboot).
 - `DOMINION_NAVIGATOR_DEBUG_PORT`: DevTools port (default `9226`). All CDP scripts read it.
-- `DOMINION_NAVIGATOR_URL`: page to open (default `https://dominion.games/`).
+- `DOMINION_NAVIGATOR_URL`: page to open.
+- `DOMINION_NAVIGATOR_STATE_DIR`: where the default profile and agent logs go (default `$XDG_STATE_HOME/dominion-navigator`).
 
 For normal hacking, keep the launcher running in one terminal and the dev loop in another:
 
@@ -237,3 +249,12 @@ Each prompt carries the tab's agent token and tells the agent to call `join` wit
 A token also ends when a new game starts in the tab. It is kept in the tab's `sessionStorage`, so it survives a reload of the tab. It says which game to play and when to stop; it is not a secret that keeps other local agents out, since the MCP server can drive any game in that Chrome without one. A session that joined a player's game cannot call `new_game` or `resign`.
 
 The agent's MCP server plays through the Chrome that `npm run launch:chrome` starts, so the game must be open there, and `step` still refuses games that seat human opponents unless that server is started with `--allow-human-opponents`.
+
+### Starting agents from the overlay
+
+In the launcher's Chrome, the Agent box also shows **Ask Agent** and **Agent Takes Over**. These start the agent themselves, with no copying: the launcher runs `claude -p` with the prompt the Copy buttons would have copied, gives it the `dominion` MCP server through `--mcp-config` for that run only (nothing is registered globally), and shows its progress and final answer in the overlay. Take Back, or an agent's Stop button, ends the process.
+
+- The overlay reaches the launcher through a CDP binding that the launcher adds to the extension's content-script world in each tab. The page's own scripts cannot see it, and other Chromes have no launcher, so the buttons appear only there.
+- The agent runs in `agent.cwd` from the config, with `--permission-mode dontAsk` and only `agent.allowedTools` allowed. Point `agent.cwd` at a checkout whose instructions and skills you want it to use, such as dominion-playbook.
+- `agent.allowHumanOpponents` passes `--allow-human-opponents` to that server.
+- Each run's `stream-json` output is kept in `$XDG_STATE_HOME/dominion-navigator/agents/`. Hover over an agent's text in the overlay to see its log path.

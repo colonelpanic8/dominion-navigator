@@ -199,6 +199,30 @@ export const OVERLAY_HTML = `
       gap: 6px;
     }
     #advisor-take-back { margin-top: 6px; }
+    #agent-buttons { margin-top: 6px; }
+    #agent-list { margin-top: 6px; }
+    .agent-entry {
+      margin-top: 4px;
+      padding: 4px 6px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 4px;
+    }
+    .agent-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      color: #dce2ea;
+    }
+    .agent-text {
+      margin-top: 2px;
+      max-height: 160px;
+      overflow: auto;
+      user-select: text;
+      color: #c4ccd6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .advisor textarea::placeholder { color: #8f99a6; }
     #advisor-status { margin-top: 6px; }
     #advisor-prompt {
@@ -236,6 +260,11 @@ export const OVERLAY_HTML = `
           <button id="advisor-ask" class="text-button" title="Copy a prompt, with this tab's agent token, that asks an agent this question about the game">Copy Kingdom Evaluation</button>
           <button id="advisor-play" class="text-button" title="Copy a prompt, with this tab's agent token, that hands this game to an agent">Copy Take-Over</button>
         </div>
+        <div id="agent-buttons" class="advisor-buttons hidden">
+          <button id="agent-ask" class="text-button" title="Start an agent that answers this question about the game, and show its answer here">Ask Agent</button>
+          <button id="agent-play" class="text-button" title="Start an agent that takes over this game and plays it to the end">Agent Takes Over</button>
+        </div>
+        <div id="agent-list" class="hidden"></div>
         <button id="advisor-take-back" class="text-button hidden" title="End the agent token: an agent that joined with it can no longer move">Take Back</button>
         <div id="advisor-status" class="muted hidden"></div>
         <div id="advisor-prompt" class="hidden"></div>

@@ -1,9 +1,11 @@
+import { join } from "node:path";
+import { expandHome, loadConfig, stateDir } from "./config.mjs";
+
 export const DEFAULT_DEBUG_PORT = 9226;
-export const DEFAULT_CHROME_PROFILE = "/tmp/dominion-navigator-chrome-profile4";
 export const LAUNCHER_PID_FILE = "launcher.pid";
 
 export function chromeProfile() {
-  return process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? DEFAULT_CHROME_PROFILE;
+  return process.env.DOMINION_NAVIGATOR_CHROME_PROFILE ?? expandHome(loadConfig().chrome?.profile) ?? join(stateDir(), "chrome-profile");
 }
 
 export function debugPort(...legacyEnvNames) {
@@ -11,7 +13,7 @@ export function debugPort(...legacyEnvNames) {
     const value = process.env[name];
     if (value) return Number(value);
   }
-  return DEFAULT_DEBUG_PORT;
+  return loadConfig().chrome?.debugPort ?? DEFAULT_DEBUG_PORT;
 }
 
 export function debugUrl(port, path) {
@@ -30,9 +32,10 @@ export async function fetchJson(url, init) {
 
 /**
  * Request/response bookkeeping for a CDP transport. `write` sends one serialized
- * command; the caller feeds each raw incoming message to `receive`.
+ * command; the caller feeds each raw incoming message to `receive`. Messages that
+ * answer no command (events) go to `onEvent`.
  */
-export function createCdpSession(write, { timeoutMs } = {}) {
+export function createCdpSession(write, { timeoutMs, onEvent } = {}) {
   let nextId = 1;
   const pending = new Map();
 
@@ -55,7 +58,11 @@ export function createCdpSession(write, { timeoutMs } = {}) {
     },
     receive(raw) {
       const message = JSON.parse(raw);
-      const resolve = message.id ? pending.get(message.id) : undefined;
+      if (!message.id) {
+        onEvent?.(message);
+        return;
+      }
+      const resolve = pending.get(message.id);
       if (!resolve) return;
       pending.delete(message.id);
       resolve(message);

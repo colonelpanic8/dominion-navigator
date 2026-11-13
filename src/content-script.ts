@@ -1,10 +1,11 @@
 import { buildAskPrompt, buildPlayPrompt, GameRef } from "./agent/advisor";
 import { agentToken, agentTokenActive, revokeAgentToken } from "./content/agent-token";
+import { callLauncher, launcherAvailable } from "./content/launcher";
 import { chromeApi } from "./content/environment";
 import { InvariantReporter } from "./content/invariants";
 import { buildDrawKnowledgeWindowPayload, clickedKnowledgeZone, heroDrawZone } from "./content/knowledge-window";
 import { LogKnowledgeWatcher } from "./content/log-watcher";
-import { createOverlay } from "./content/overlay";
+import { AgentRequest, createOverlay } from "./content/overlay";
 import {
   loadPersistedState,
   persistState,
@@ -32,6 +33,13 @@ let resizeSnapshotTimer: number | undefined;
 /** The latest probe event folded into the tracker; echoed back so the probe knows how fresh its knowledge is. */
 let latestEventSeq = 0;
 
+function agentPrompt(request: AgentRequest): string {
+  const player = latestSnapshot?.hero?.name;
+  const turn = latestSnapshot?.activeTurn?.turnNumber;
+  const game: GameRef = { token: agentToken(), ...(player ? { player } : {}), ...(turn !== undefined ? { turn } : {}) };
+  return request.kind === "ask" ? buildAskPrompt(request.question, game) : buildPlayPrompt(game);
+}
+
 const overlay = createOverlay(
   {
     onRefresh: requestSnapshot,
@@ -40,14 +48,20 @@ const overlay = createOverlay(
       tracker.setLocationIdentityRepairEnabled(enabled);
       refreshKnowledge();
     },
-    agentPrompt: (request) => {
-      const player = latestSnapshot?.hero?.name;
-      const turn = latestSnapshot?.activeTurn?.turnNumber;
-      const game: GameRef = { token: agentToken(), ...(player ? { player } : {}), ...(turn !== undefined ? { turn } : {}) };
-      return request.kind === "ask" ? buildAskPrompt(request.question, game) : buildPlayPrompt(game);
-    },
+    agentPrompt,
     agentTokenActive,
-    onTakeBack: revokeAgentToken
+    onTakeBack: () => {
+      if (agentTokenActive() && launcherAvailable()) void callLauncher({ type: "stop", token: agentToken() });
+      revokeAgentToken();
+    },
+    agents: {
+      available: launcherAvailable,
+      start: (request) => callLauncher({ type: "start", kind: request.kind, prompt: agentPrompt(request), token: agentToken() }),
+      // Only a start issues a token; with none out there are no agents to show or stop.
+      status: () => (agentTokenActive() ? callLauncher({ type: "status", token: agentToken() }) : Promise.resolve({ id: 0, ok: true, agents: [] })),
+      stop: (agentId) =>
+        agentTokenActive() ? callLauncher({ type: "stop", token: agentToken(), agentId }) : Promise.resolve({ id: 0, ok: true, agents: [] })
+    }
   },
   { identityRepairEnabled: tracker.isLocationIdentityRepairEnabled() }
 );

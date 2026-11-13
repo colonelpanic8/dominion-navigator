@@ -1,5 +1,4 @@
 export declare const DEFAULT_DEBUG_PORT: number;
-export declare const DEFAULT_CHROME_PROFILE: string;
 export declare const LAUNCHER_PID_FILE: string;
 export declare function chromeProfile(): string;
 export declare function debugPort(...legacyEnvNames: string[]): number;
