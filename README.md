@@ -73,7 +73,7 @@ The launcher and the scripts read their settings from `$XDG_CONFIG_HOME/dominion
 ```json
 {
   "chrome": { "profile": "~/.local/state/dominion-navigator/chrome-profile", "debugPort": 9226, "binary": "google-chrome-stable", "url": "https://dominion.games/" },
-  "agent": { "command": "claude", "cwd": "~/projects/dominion-playbook", "model": "opus", "allowHumanOpponents": false, "allowedTools": ["mcp__dominion", "Read", "Glob", "Grep", "Skill"], "extraArgs": [] }
+  "agent": { "command": "claude", "cwd": "~/projects/dominion-playbook", "model": "opus", "allowHumanOpponents": true, "allowedTools": ["mcp__dominion", "Read", "Glob", "Grep", "Skill"], "extraArgs": [] }
 }
 ```
 
@@ -256,5 +256,5 @@ In the launcher's Chrome, the Agent box also shows **Ask Agent** and **Agent Tak
 
 - The overlay reaches the launcher through a CDP binding that the launcher adds to the extension's content-script world in each tab. The page's own scripts cannot see it, and other Chromes have no launcher, so the buttons appear only there.
 - The agent runs in `agent.cwd` from the config, with `--permission-mode dontAsk` and only `agent.allowedTools` allowed. Point `agent.cwd` at a checkout whose instructions and skills you want it to use, such as dominion-playbook.
-- `agent.allowHumanOpponents` passes `--allow-human-opponents` to that server.
+- Agents started here play human opponents too: the server gets `--allow-human-opponents`, and the take-over prompt tells the agent the player chose to hand it the game. Set `agent.allowHumanOpponents` to `false` to keep them to games against bots.
 - Each run's `stream-json` output is kept in `$XDG_STATE_HOME/dominion-navigator/agents/`. Hover over an agent's text in the overlay to see its log path.

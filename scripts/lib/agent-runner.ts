@@ -17,7 +17,7 @@ export function agentCommand(options: { root: string; tsxLoader: string; agent: 
   const { root, tsxLoader, agent } = options;
   const server = {
     command: process.execPath,
-    args: ["--import", tsxLoader, resolve(root, "scripts/mcp-server.ts"), ...(agent.allowHumanOpponents ? ["--allow-human-opponents"] : [])]
+    args: ["--import", tsxLoader, resolve(root, "scripts/mcp-server.ts"), ...(agent.allowHumanOpponents === false ? [] : ["--allow-human-opponents"])]
   };
   const args = [
     "-p",

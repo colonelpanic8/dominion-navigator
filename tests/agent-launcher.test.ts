@@ -31,12 +31,17 @@ test("an agent gets the dominion server for its run only, and no tools beyond th
   assert.deepEqual(args.slice(args.indexOf("--permission-mode"), args.indexOf("--permission-mode") + 2), ["--permission-mode", "dontAsk"]);
   assert.ok(args.includes("--allowedTools=mcp__dominion,Read,Glob,Grep,Skill"));
   const server = JSON.parse(args[args.indexOf("--mcp-config") + 1]!).mcpServers.dominion;
-  assert.deepEqual(server.args, ["--import", "file:///repo/node_modules/tsx/dist/loader.mjs", "/repo/scripts/mcp-server.ts"]);
+  assert.deepEqual(server.args, [
+    "--import",
+    "file:///repo/node_modules/tsx/dist/loader.mjs",
+    "/repo/scripts/mcp-server.ts",
+    "--allow-human-opponents"
+  ]);
 
-  const human = agentCommand({ root: "/repo", tsxLoader: "tsx", agent: { allowHumanOpponents: true, model: "opus", cwd: "/play" } });
-  assert.ok(JSON.parse(human.args[human.args.indexOf("--mcp-config") + 1]!).mcpServers.dominion.args.includes("--allow-human-opponents"));
-  assert.deepEqual(human.args.slice(human.args.indexOf("--model"), human.args.indexOf("--model") + 2), ["--model", "opus"]);
-  assert.equal(human.cwd, "/play");
+  const botsOnly = agentCommand({ root: "/repo", tsxLoader: "tsx", agent: { allowHumanOpponents: false, model: "opus", cwd: "/play" } });
+  assert.ok(!JSON.parse(botsOnly.args[botsOnly.args.indexOf("--mcp-config") + 1]!).mcpServers.dominion.args.includes("--allow-human-opponents"));
+  assert.deepEqual(botsOnly.args.slice(botsOnly.args.indexOf("--model"), botsOnly.args.indexOf("--model") + 2), ["--model", "opus"]);
+  assert.equal(botsOnly.cwd, "/play");
 });
 
 test("the agent's stream shows its moves, its latest words and its final answer", () => {

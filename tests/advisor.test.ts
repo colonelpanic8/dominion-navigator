@@ -26,6 +26,7 @@ test("a take-over tells the agent to join with the token and to stop when the ga
   assert.ok(prompt.includes('call `join` with {"token":"dn-00ff"}'));
   assert.match(prompt, /evaluate the kingdom from where this game stands/);
   assert.match(prompt, /took the game back, stop/);
+  assert.match(prompt, /whoever the opponents are, humans or bots/);
 });
 
 test("an agent token is good for the tab that issued it and the game it first joined", () => {

@@ -47,6 +47,7 @@ export function buildPlayPrompt(game: GameRef): string {
     `You are taking over a game of Dominion on dominion.games for ${who(game, "the player")}, who has handed you control mid-game.`,
     "",
     ...joinLines(game),
+    "The player chose to hand you this game, so play it whoever the opponents are, humans or bots.",
     "Play it to the end, and play to win: answer each decision with `step`, giving a short `reason`, and call `wait` when there is no decision for you yet.",
     "Before your first move, evaluate the kingdom from where this game stands, not from an opening: given the cards each deck already holds, the turn, the score and the piles left, decide what deck you are building and when you will start greening. Say that plan in a line or two before you start, and rethink it when the game changes it.",
     "Do not use `inspect` to choose plays. If `step` or `wait` says the player took the game back, stop at once.",
