@@ -1,3 +1,5 @@
+import { buildAskPrompt, buildPlayPrompt, GameRef } from "./agent/advisor";
+import { agentToken, agentTokenActive, revokeAgentToken } from "./content/agent-token";
 import { chromeApi } from "./content/environment";
 import { InvariantReporter } from "./content/invariants";
 import { buildDrawKnowledgeWindowPayload, clickedKnowledgeZone, heroDrawZone } from "./content/knowledge-window";
@@ -37,7 +39,15 @@ const overlay = createOverlay(
     onIdentityRepairChange: (enabled) => {
       tracker.setLocationIdentityRepairEnabled(enabled);
       refreshKnowledge();
-    }
+    },
+    agentPrompt: (request) => {
+      const player = latestSnapshot?.hero?.name;
+      const turn = latestSnapshot?.activeTurn?.turnNumber;
+      const game: GameRef = { token: agentToken(), ...(player ? { player } : {}), ...(turn !== undefined ? { turn } : {}) };
+      return request.kind === "ask" ? buildAskPrompt(request.question, game) : buildPlayPrompt(game);
+    },
+    agentTokenActive,
+    onTakeBack: revokeAgentToken
   },
   { identityRepairEnabled: tracker.isLocationIdentityRepairEnabled() }
 );

@@ -173,6 +173,43 @@ export const OVERLAY_HTML = `
       margin-top: 5px;
       color: #dce2ea;
     }
+    .advisor {
+      margin-bottom: 8px;
+      border-top: 1px solid rgba(255,255,255,.18);
+      padding-top: 8px;
+    }
+    .advisor textarea {
+      all: unset;
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 40px;
+      margin-bottom: 6px;
+      padding: 4px 6px;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 4px;
+      background: rgba(255,255,255,.06);
+      color: #f5f5f5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .advisor-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    #advisor-take-back { margin-top: 6px; }
+    .advisor textarea::placeholder { color: #8f99a6; }
+    #advisor-status { margin-top: 6px; }
+    #advisor-prompt {
+      margin-top: 6px;
+      max-height: 160px;
+      user-select: text;
+      overflow: auto;
+      color: #dce2ea;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .hidden { display: none; }
   </style>
   <div class="panel collapsed">
@@ -191,6 +228,17 @@ export const OVERLAY_HTML = `
       </label>
       <div class="actions">
         <button id="show-deck" class="text-button" title="Open your draw pile knowledge in a Dominion card window">Open Draw Window</button>
+      </div>
+      <div class="advisor">
+        <div class="zone-title"><span>Agent</span></div>
+        <textarea id="advisor-question" rows="2" placeholder="A question about this game for an agent. Leave blank to have it evaluate the kingdom."></textarea>
+        <div class="advisor-buttons">
+          <button id="advisor-ask" class="text-button" title="Copy a prompt, with this tab's agent token, that asks an agent this question about the game">Copy Kingdom Evaluation</button>
+          <button id="advisor-play" class="text-button" title="Copy a prompt, with this tab's agent token, that hands this game to an agent">Copy Take-Over</button>
+        </div>
+        <button id="advisor-take-back" class="text-button hidden" title="End the agent token: an agent that joined with it can no longer move">Take Back</button>
+        <div id="advisor-status" class="muted hidden"></div>
+        <div id="advisor-prompt" class="hidden"></div>
       </div>
       <div class="knowledge">
         <div class="zone-title"><span>Knowledge Model</span></div>

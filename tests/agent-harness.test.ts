@@ -24,8 +24,13 @@ function fakeClient(views: AgentView[], opponentsAreBots = true) {
   const answers: Array<[string, number[]]> = [];
   const session: SessionState = { screen: "game", user: "me", game: { over: false, opponentsAreBots } };
   const log = views[0]!.sinceLastDecision.map((text, index) => ({ index, depth: 0, text }));
+  /** The agent token the tab accepts, as the overlay's Agent box hands out and takes back. */
+  const tab: { token?: string } = {};
+  const agentJoin = (token: unknown) => (tab.token && token === tab.token ? { ok: true, gameNumber: views[0]?.game.number } : { ok: false, error: "This tab has no such agent token." });
   const call = async (method: string, params: unknown[]): Promise<unknown> => {
     switch (method) {
+      case "agentJoin":
+        return agentJoin(params[0]);
       case "getSession":
         return session;
       case "getAgentView":
@@ -46,7 +51,7 @@ function fakeClient(views: AgentView[], opponentsAreBots = true) {
         throw new Error(`unexpected call ${method}`);
     }
   };
-  return { answers, client: { call } as Parameters<typeof createDominionTools>[0] };
+  return { answers, tab, client: { call, join: async (token: string) => agentJoin(token) } as Parameters<typeof createDominionTools>[0] };
 }
 
 const live = new AbortController().signal;
@@ -199,6 +204,23 @@ test("step does not act against human opponents unless that is allowed", async (
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
   await tool(createDominionTools(allowed.client, cardData, { allowHumanOpponents: true }), "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
   assert.equal(allowed.answers.length, 1);
+});
+
+test("a session that joined with an agent token plays until the player takes the game back", async () => {
+  const page = fakeClient([firstBuy, secondBuy]);
+  const tools = createDominionTools(page.client, cardData);
+  await assert.rejects(tool(tools, "join").run({ token: "dn-1" }, live), /Could not join/);
+
+  page.tab.token = "dn-1";
+  assert.match(await tool(tools, "join").run({ token: "dn-1" }, live), /^JOINED[\s\S]*DECISION/);
+  await assert.rejects(tool(tools, "new_game").run({}, live), /only the player starts or resigns/);
+  await tool(tools, "step").run({ decision: firstBuy.decision!.id, choose: ["Silver"] }, live);
+  assert.equal(page.answers.length, 1);
+
+  delete page.tab.token;
+  await assert.rejects(tool(tools, "step").run({ decision: secondBuy.decision!.id, choose: ["Silver"] }, live), /took this game back/);
+  await assert.rejects(tool(tools, "wait").run({}, live), /took this game back/);
+  assert.equal(page.answers.length, 1);
 });
 
 test("inspect bounds cyclic client objects and follows paths through maps", () => {

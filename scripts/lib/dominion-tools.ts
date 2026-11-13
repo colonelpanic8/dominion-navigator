@@ -16,6 +16,7 @@ export type DominionToolOptions = {
 export const INSTRUCTIONS = [
   "Plays dominion.games through the Dominion Navigator browser extension, without screenshots.",
   "Call `state` first: it says which screen the client is on and, in a game, prints the whole table.",
+  "When a player hands you a game with an agent token, call `join` with it instead: it ties this session to their tab and prints the table. Once they take the game back, `step` and `wait` fail and you must stop.",
   "A DECISION lists numbered options. Answer it with `step`, passing the decision id and the options to choose; `step` then waits for your next decision and returns only what changed since the view you were last shown. Its first line, CHOSE, names what you chose by label; check it.",
   "Choose options by label rather than number: option numbers change from one decision to the next. A label matches without case, e.g. \"Silver\"; when a label is in more than one group, prefix the group kind, as in \"buy:Silver\" or \"play:Copper\". Repeat a label to take several options with it: [\"Copper\", \"Copper\"] plays two Coppers. A label that matches nothing, or matches options in different groups, fails without acting and lists the options. Numbers still work, and both can be mixed.",
   "`step` takes an optional `reason`, a short note on why you chose what you did; it is kept in the game log when the server keeps one.",
@@ -107,14 +108,18 @@ function describeChoice(decision: Decision, choose: number[]): string {
 }
 
 const GAME_OVER = "The game is over. Call new_game to play again.";
+const TAKEN_BACK = "The player took this game back, or it is over. Stop: make no more dominion tool calls for it.";
+const PLAYERS_GAME = "This session joined a player's game, and only the player starts or resigns games.";
 const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
 
-export function createDominionTools(client: Pick<DominionClient, "call">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
+export function createDominionTools(client: Pick<DominionClient, "call" | "join">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
   const { gameLog } = options;
   /** What the caller was last shown, which deltas and new log lines are taken against. */
   let shown: { view: AgentView; logIndex: number } | undefined;
   /** Cards whose text the caller was given in the current game. */
   let described = new Set<string>();
+  /** The agent token this session joined a player's game with. */
+  let joined: string | undefined;
 
   const cardLines = (view: AgentView): string[] => {
     const fresh = [...viewCardNames(view)].filter((name) => !described.has(name) && !BASIC_CARDS.has(name));
@@ -151,6 +156,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
 
   /** Whether this server may act in the game on screen. Fails when there is no game. */
   const mayActInGame = async (): Promise<boolean> => {
+    if (joined && !(await client.call("agentJoin", [joined])).ok) throw new Error(TAKEN_BACK);
     const session = await client.call("getSession", []);
     if (session.screen === "login") throw new Error("Nobody is logged in to dominion.games in that Chrome. Log in there first.");
     if (session.screen !== "game") throw new Error(`No game is running; the client is on the ${session.screen} screen. Call new_game.`);
@@ -184,6 +190,21 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
     return lines.join("\n");
   };
 
+  const showState = async (signal: AbortSignal): Promise<string> => {
+    const session = await client.call("getSession", []);
+    let view: AgentView;
+    try {
+      view = await client.call("getAgentView", []);
+    } catch {
+      return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
+    }
+    if (!view.game.running && view.game.result) {
+      gameLog?.result(view);
+      return [describeSession(session), renderGameOverText(view, view.game.result), GAME_OVER].join("\n");
+    }
+    return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
+  };
+
   const waitMs = (args: Record<string, unknown>): number => (integer(args, "timeout_s", { min: 1, max: MAX_WAIT_S }) ?? DEFAULT_WAIT_S) * 1000;
   const timeoutProperty = { type: "integer", description: `Seconds to wait for your next decision (default ${DEFAULT_WAIT_S}, max ${MAX_WAIT_S}).` };
 
@@ -193,19 +214,20 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       description:
         "Where the client is (login, lobby, table or game) and, in a game, the whole table: turn, both players' zones as far as this player can know them, supply, trash, recent log, the open decision, and the text of every card in the game. A finished game shows only its result and each player's cards.",
       inputSchema: { type: "object", properties: {} },
-      async run(_args, signal) {
-        const session = await client.call("getSession", []);
-        let view: AgentView;
-        try {
-          view = await client.call("getAgentView", []);
-        } catch {
-          return [describeSession(session), "No game to show. Call new_game to start one against bots."].join("\n");
-        }
-        if (!view.game.running && view.game.result) {
-          gameLog?.result(view);
-          return [describeSession(session), renderGameOverText(view, view.game.result), GAME_OVER].join("\n");
-        }
-        return [describeSession(session), ...(await present(view, "full", signal))].join("\n");
+      run: (_args, signal) => showState(signal)
+    },
+    {
+      name: "join",
+      description:
+        "Ties this session to the game of the player whose agent token this is, then prints that game as `state` does. Use the token from the prompt the player gave you. It works until the player takes the game back or the game ends.",
+      inputSchema: { type: "object", properties: { token: { type: "string", description: "The agent token, e.g. dn-1f0c…" } }, required: ["token"] },
+      async run(args, signal) {
+        const token = text(args, "token");
+        const result = await client.join(token);
+        if (!result.ok) throw new Error(`Could not join: ${result.error} Ask the player for a new prompt.`);
+        joined = token;
+        shown = undefined;
+        return [`JOINED${result.gameNumber ? ` game ${result.gameNumber}` : ""}`, await showState(signal)].join("\n");
       }
     },
     {
@@ -274,6 +296,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
         }
       },
       async run(args, signal) {
+        if (joined) throw new Error(PLAYERS_GAME);
         const bots = integer(args, "bots", { min: 1, max: 3 }) ?? 1;
         const kingdom = args.kingdom === undefined ? undefined : list(args, "kingdom", "string");
         const result = await client.call("startBotGame", [{ bots, ...(kingdom ? { kingdom } : {}) }], { timeoutMs: START_GAME_TIMEOUT_MS });
@@ -286,6 +309,7 @@ export function createDominionTools(client: Pick<DominionClient, "call">, cardDa
       description: "Resigns the game in progress.",
       inputSchema: { type: "object", properties: {} },
       async run(_args, signal) {
+        if (joined) throw new Error(PLAYERS_GAME);
         const result = await client.call("resign", [], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not resign: ${result.error}`);
         const view = await client.call("getAgentView", []);

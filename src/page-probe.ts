@@ -1,3 +1,4 @@
+import { AGENT_TOKEN_KEY, claimAgentToken, JoinResult, parseAgentTokenRecord } from "./agent/agent-token";
 import { inspectPath, InspectOptions, InspectResult } from "./agent/inspect";
 import type { ActionResult, AgentView, LogPage, SessionState } from "./agent/types";
 import { listenForNavigatorMessages, postNavigatorMessage } from "./message-bus";
@@ -26,6 +27,8 @@ type ProbeState = {
   answer: (decisionId: string, indices: number[]) => AnswerResult;
   debugState: AgentBridge["debugState"];
   getSession: () => SessionState;
+  /** Whether `token` is the one this tab's overlay handed out and the player has not taken back. The first call ties it to the game on screen. */
+  agentJoin: (token: string) => JoinResult;
   getLog: (options?: { afterIndex?: number; limit?: number }) => LogPage;
   inspect: (path: string, options?: InspectOptions) => InspectResult;
   startBotGame: (options: NewGameOptions) => Promise<ActionResult>;
@@ -49,6 +52,19 @@ const win = window as Window & typeof globalThis & DominionGlobals & { __dominio
 
 const PATCHED_MARKER = "__dominionNavigatorPatched";
 const agent = new AgentBridge();
+
+function agentJoin(token: string): JoinResult {
+  let gameNumber: string | undefined;
+  try {
+    gameNumber = agent.getAgentView().game.number;
+  } catch {
+    return { ok: false, error: "No game is on screen in this tab." };
+  }
+  const claimed = claimAgentToken(parseAgentTokenRecord(window.sessionStorage.getItem(AGENT_TOKEN_KEY)), token, gameNumber);
+  if (!claimed.ok) return claimed;
+  window.sessionStorage.setItem(AGENT_TOKEN_KEY, JSON.stringify(claimed.record));
+  return { ok: true, ...(gameNumber ? { gameNumber } : {}) };
+}
 
 function emitMoveSummary(game: RuntimeGame, move: RuntimeCardMove, phase: CardMoveSummary["phase"]): void {
   try {
@@ -82,6 +98,8 @@ function startNewGameInstance(game: RuntimeGame, fingerprint?: string): void {
   probe.gameInstanceId = `game-${probe.gameInstanceSerial}-${Date.now()}`;
   probe.events = [];
   agent.resetForNewGame();
+  // An agent joined the last game, not this one.
+  window.sessionStorage.removeItem(AGENT_TOKEN_KEY);
 }
 
 function updateGameInstance(game: RuntimeGame): void {
@@ -171,6 +189,7 @@ function install(): void {
     answer: (decisionId, indices) => agent.answer(decisionId, indices),
     debugState: () => agent.debugState(),
     getSession: readSession,
+    agentJoin,
     getLog: (options) => agent.getLog(options),
     inspect: (path, options) => inspectPath(INSPECT_ROOTS, path, options),
     startBotGame,

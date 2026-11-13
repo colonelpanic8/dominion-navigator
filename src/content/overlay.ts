@@ -18,6 +18,11 @@ export type OverlayHandlers = {
   onRefresh: () => void;
   onShowDrawWindow: () => void;
   onIdentityRepairChange: (enabled: boolean) => void;
+  /** The prompt the Agent box copies: a question for an agent, or a hand-over of the game. */
+  agentPrompt: (request: { kind: "ask"; question: string } | { kind: "play" }) => string;
+  /** Whether an agent holding this tab's token may still play. */
+  agentTokenActive: () => boolean;
+  onTakeBack: () => void;
 };
 
 export type Overlay = {
@@ -171,6 +176,12 @@ export function createOverlay(handlers: OverlayHandlers, options: { identityRepa
   const toggleButton = element<HTMLButtonElement>("#toggle");
   const refreshButton = element<HTMLButtonElement>("#refresh");
   const identityRepairInput = element<HTMLInputElement>("#identity-repair");
+  const advisorQuestion = element<HTMLTextAreaElement>("#advisor-question");
+  const advisorAsk = element<HTMLButtonElement>("#advisor-ask");
+  const advisorPlay = element<HTMLButtonElement>("#advisor-play");
+  const advisorTakeBack = element<HTMLButtonElement>("#advisor-take-back");
+  const advisorStatus = element("#advisor-status");
+  const advisorPrompt = element("#advisor-prompt");
 
   toggleButton.addEventListener("click", () => {
     const isCollapsed = panelElement.classList.toggle("collapsed");
@@ -184,6 +195,43 @@ export function createOverlay(handlers: OverlayHandlers, options: { identityRepa
 
   identityRepairInput.checked = options.identityRepairEnabled;
   identityRepairInput.addEventListener("change", () => handlers.onIdentityRepairChange(identityRepairInput.checked));
+
+  const askLabel = (): string => (advisorQuestion.value.trim() ? "Copy Question" : "Copy Kingdom Evaluation");
+  advisorQuestion.addEventListener("input", () => {
+    advisorAsk.textContent = askLabel();
+  });
+  // Keys typed here are the overlay's, not shortcuts for the game underneath.
+  advisorQuestion.addEventListener("keydown", (event) => event.stopPropagation());
+
+  /** Copies a prompt for the player to paste into an agent, and shows it in case the clipboard refuses. */
+  const showTakeBack = (): void => {
+    advisorTakeBack.classList.toggle("hidden", !handlers.agentTokenActive());
+  };
+  const copyPrompt = (prompt: string): void => {
+    advisorPrompt.textContent = prompt;
+    advisorPrompt.classList.remove("hidden");
+    showTakeBack();
+    advisorStatus.classList.remove("hidden");
+    advisorStatus.textContent = "Copying...";
+    navigator.clipboard.writeText(prompt).then(
+      () => {
+        advisorStatus.textContent = "Copied. Paste it into an agent started in the dominion-navigator repository.";
+      },
+      () => {
+        advisorStatus.textContent = "Could not reach the clipboard. Select the text below and copy it.";
+      }
+    );
+  };
+  advisorAsk.addEventListener("click", () => copyPrompt(handlers.agentPrompt({ kind: "ask", question: advisorQuestion.value })));
+  advisorPlay.addEventListener("click", () => copyPrompt(handlers.agentPrompt({ kind: "play" })));
+  advisorTakeBack.addEventListener("click", () => {
+    handlers.onTakeBack();
+    showTakeBack();
+    advisorPrompt.classList.add("hidden");
+    advisorStatus.classList.remove("hidden");
+    advisorStatus.textContent = "Taken back. The agent's token no longer works, so its next move is refused.";
+  });
+  showTakeBack();
 
   return {
     root,

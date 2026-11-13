@@ -40,6 +40,7 @@ The knowledge model separates Dominion's internal zone state from what the playe
   - `src/probe/agent-bridge.ts`: the agent API on `window.__dominionNavigator`.
   - `src/probe/session.ts`: which screen the client is on, and starting and resigning bot games.
 - `src/agent/`: pure, Node-testable agent code: the `agent-view@1` projection (`agent-view.ts`), its text and delta rendering (`render-text.ts`), decision building and answer validation (`decisions.ts`), notes for expansion state (`table-notes.ts`), the raw-state dump (`inspect.ts`), the card glossary, and policies.
+- `src/agent/advisor.ts`: the prompts the overlay's Agent box copies for pasting into an agent; `src/agent/agent-token.ts`: the token they carry, which the `join` MCP tool checks.
 - `scripts/mcp-server.ts`: the MCP server. `scripts/lib/dominion-tools.ts` defines its tools, `scripts/lib/dominion-client.ts` calls the probe over CDP, and `scripts/lib/mcp-stdio.ts` is the stdio transport.
 - `src/content-script.ts`: extension entry point that wires the pieces below together.
   - `src/content/overlay.ts`: the shadow-DOM overlay.
@@ -143,6 +144,7 @@ node --import tsx scripts/mcp-server.ts
 | Tool | What it does |
 | --- | --- |
 | `state` | The client's screen and, in a game, the whole table plus the text of every card in it. A finished game shows only its result and each player's cards. |
+| `join` | Ties the session to the game of the player whose agent token it is given, and prints that game as `state` does. |
 | `step` | Answers the open decision by option label or number, waits for the next decision, and returns what changed. |
 | `wait` | Waits for the next decision without answering. |
 | `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
@@ -221,3 +223,17 @@ Related scripts (the extract and kingdom scripts drive a Chrome started by `npm 
 - `node scripts/extract-card-texts-from-cdp.mjs`: logs in (credentials from the `pass` entry in `DOMINION_PASS_ENTRY`, default `dominion.games/colonelpanic8`) and re-extracts the card-shaped objects.
 - `node scripts/audit-card-tracker-candidates.mjs`: regenerates `trackerAudit` in place (no browser needed).
 - `node scripts/set-table-kingdom.mjs [--no-bot] <card>...`: fills the open table editor with a fixed kingdom and, by default, adds a bot.
+
+## Handing the Game to an Agent From the Overlay
+
+The overlay's Agent box copies a prompt to the clipboard. Paste it into any agent that has the `dominion` MCP tools, such as one started in this repository, whose `.mcp.json` registers them. The prompt is also shown in the box, in case the clipboard refuses.
+
+Each prompt carries the tab's agent token and tells the agent to call `join` with it. `join` ties that agent's MCP session to the tab the token came from, whichever dominion.games tabs are open, and prints the table. The first join also ties the token to the game on screen.
+
+- **Copy Take-Over** hands the game in progress to the agent at any point. The agent is told to evaluate the kingdom first from where the game stands (both decks, the turn, the score and the piles left), to say its plan, and to play to the end with `step` and `wait`.
+- **Copy Kingdom Evaluation** asks for advice without moves. In the first two turns it asks for the strongest strategy, openings for $4/$3 and $5/$2, the interactions that matter, and the cards to skip; after that, for the best plan from the decks as they stand. Type a question in the box and the button reads Copy Question and asks that.
+- **Take Back** appears once a token is out, and ends it. A session that joined with it then has `step` and `wait` refused, with a message telling the agent to stop, so the agent stops at its next move rather than at once. The next prompt carries a new token.
+
+A token also ends when a new game starts in the tab. It is kept in the tab's `sessionStorage`, so it survives a reload of the tab. It says which game to play and when to stop; it is not a secret that keeps other local agents out, since the MCP server can drive any game in that Chrome without one. A session that joined a player's game cannot call `new_game` or `resign`.
+
+The agent's MCP server plays through the Chrome that `npm run launch:chrome` starts, so the game must be open there, and `step` still refuses games that seat human opponents unless that server is started with `--allow-human-opponents`.
