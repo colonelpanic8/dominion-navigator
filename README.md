@@ -66,7 +66,7 @@ Launch a dedicated Chrome profile with the unpacked extension loaded:
 npm run launch:chrome
 ```
 
-Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. One launcher owns the profile: running it again while it is up opens another `dominion.games` tab in its Chrome and exits.
+Chrome 137+ no longer reliably supports `--load-extension` in branded builds, so the launcher loads `dist/` through the DevTools `Extensions.loadUnpacked` pipe API, keeps that pipe alive, and then opens `dominion.games`. Branded Chrome also disables an unpacked extension that is reloaded through `chrome://extensions` APIs, so `npm run reload:extension` asks the launcher (via a `SIGHUP` to the pid in `<profile>/launcher.pid`) to reload it over the same pipe, then checks that it is still enabled. One launcher owns the profile: running it again while it is up brings its `dominion.games` tab to the front (opening one if none is left) and exits. Chrome on Wayland cannot raise its own window, so a desktop launcher has to focus it (the dotfiles' `dominion` command does that on Hyprland).
 
 The launcher and the scripts read their settings from `$XDG_CONFIG_HOME/dominion-navigator/config.json` (or the file `DOMINION_NAVIGATOR_CONFIG` names). Every key is optional:
 

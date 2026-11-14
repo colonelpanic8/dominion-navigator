@@ -27,12 +27,27 @@ async function runningLauncherPid() {
   }
 }
 
-// One launcher owns the profile. Starting another opens a tab in its Chrome instead.
+/** Brings the running Chrome's tab showing `url` to the front, opening one if there is none. */
+async function showInRunningChrome() {
+  const pages = await fetch(debugUrl(port, "/json/list"))
+    .then((response) => (response.ok ? response.json() : undefined))
+    .catch(() => undefined);
+  if (!Array.isArray(pages)) return undefined;
+  const existing = pages.find((target) => target.type === "page" && target.url.startsWith(url));
+  if (existing) {
+    const response = await fetch(debugUrl(port, `/json/activate/${existing.id}`)).catch(() => undefined);
+    if (response?.ok) return "Showed";
+  }
+  const response = await fetch(debugUrl(port, `/json/new?${url}`), { method: "PUT" }).catch(() => undefined);
+  return response?.ok ? "Opened" : undefined;
+}
+
+// One launcher owns the profile. Starting another shows its Chrome's tab instead.
 const runningPid = await runningLauncherPid();
 if (runningPid !== undefined) {
-  const response = await fetch(debugUrl(port, `/json/new?${url}`), { method: "PUT" }).catch(() => undefined);
-  if (response?.ok) {
-    console.log(`Opened ${url} in the running Dominion Chrome (launcher pid ${runningPid}).`);
+  const shown = await showInRunningChrome();
+  if (shown) {
+    console.log(`${shown} ${url} in the running Dominion Chrome (launcher pid ${runningPid}).`);
     process.exit(0);
   }
   // Its Chrome is gone, so the pid file is stale (or the pid was reused).
