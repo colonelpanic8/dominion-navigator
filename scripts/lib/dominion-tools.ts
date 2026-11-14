@@ -7,8 +7,6 @@ import type { GameLog } from "./game-log";
 import type { Tool } from "./mcp-stdio";
 
 export type DominionToolOptions = {
-  /** Let `step` answer decisions in games that seat human opponents. */
-  allowHumanOpponents?: boolean;
   /** Where answered decisions and results are recorded, when set. */
   gameLog?: GameLog;
 };
@@ -110,7 +108,6 @@ function describeChoice(decision: Decision, choose: number[]): string {
 const GAME_OVER = "The game is over. Call new_game to play again.";
 const TAKEN_BACK = "The player took this game back, or it is over. Stop: make no more dominion tool calls for it.";
 const PLAYERS_GAME = "This session joined a player's game, and only the player starts or resigns games.";
-const HUMAN_OPPONENTS = "This game seats human opponents, and this server only plays against bots unless it is started with --allow-human-opponents.";
 
 export function createDominionTools(client: Pick<DominionClient, "call" | "join">, cardData: CardDataEntry[], options: DominionToolOptions = {}): Tool[] {
   const { gameLog } = options;
@@ -154,24 +151,23 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
     return [body, ...cardLines(current)];
   };
 
-  /** Whether this server may act in the game on screen. Fails when there is no game. */
-  const mayActInGame = async (): Promise<boolean> => {
+  /** Fails unless there is a game on screen that this session may act in. */
+  const requireGame = async (): Promise<void> => {
     if (joined && !(await client.call("agentJoin", [joined])).ok) throw new Error(TAKEN_BACK);
     const session = await client.call("getSession", []);
     if (session.screen === "login") throw new Error("Nobody is logged in to dominion.games in that Chrome. Log in there first.");
     if (session.screen !== "game") throw new Error(`No game is running; the client is on the ${session.screen} screen. Call new_game.`);
-    return Boolean(options.allowHumanOpponents || session.game?.opponentsAreBots);
   };
 
-  /** Waits for the next decision that needs a choice, answering forced ones on the way when `autoAnswer` allows. */
-  const settle = async (timeoutMs: number, mode: "full" | "delta", autoAnswer: boolean, signal: AbortSignal): Promise<string> => {
+  /** Waits for the next decision that needs a choice, answering forced ones on the way. */
+  const settle = async (timeoutMs: number, mode: "full" | "delta", signal: AbortSignal): Promise<string> => {
     const lines: string[] = [];
     let wait: WaitResult;
     for (let answered = 0; ; answered += 1) {
       wait = await client.call("waitForDecision", [{ timeoutMs }], { timeoutMs });
       signal.throwIfAborted();
       const decision = wait.status === "decision" ? wait.view.decision : null;
-      const forced = decision && autoAnswer && answered < MAX_AUTO_ANSWERS ? forcedAnswer(decision) : undefined;
+      const forced = decision && answered < MAX_AUTO_ANSWERS ? forcedAnswer(decision) : undefined;
       if (!decision || !forced) break;
       const result = await client.call("answer", [decision.id, forced]);
       if (!result.ok) break;
@@ -183,7 +179,6 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
     if (wait.status === "timeout") lines.push("No decision for you yet. Call wait to keep waiting.");
     if (wait.status === "game-over") lines.push(GAME_OVER);
     if (wait.status === "spectating") lines.push("This account is spectating this game, so there is nothing to answer.");
-    if (wait.status === "decision" && !autoAnswer) lines.push(HUMAN_OPPONENTS);
     if (wait.knowledgeLag > 0 && wait.status === "decision") {
       lines.push(`Card tracking had not caught up with ${wait.knowledgeLag} card move(s) when this view was taken, so card locations may be out of date.`);
     }
@@ -254,7 +249,7 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
         const choose = choices(args);
         const reason = optionalText(args, "reason");
         const timeoutMs = waitMs(args);
-        if (!(await mayActInGame())) throw new Error(HUMAN_OPPONENTS);
+        await requireGame();
         const openView = shown?.view.decision?.id === decision ? shown.view : await client.call("getAgentView", []);
         const open = openView.decision?.id === decision ? openView.decision : undefined;
         const rejected = async (error: string): Promise<Error> => {
@@ -267,7 +262,7 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
         const result = await client.call("answer", [decision, indices]);
         if (!result.ok) throw await rejected(result.error);
         if (open) gameLog?.decision(openView, open, indices, reason);
-        const next = await settle(timeoutMs, "delta", true, signal);
+        const next = await settle(timeoutMs, "delta", signal);
         return open ? `${describeChoice(open, indices)}\n${next}` : next;
       }
     },
@@ -277,7 +272,8 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
       inputSchema: { type: "object", properties: { timeout_s: timeoutProperty } },
       async run(args, signal) {
         const timeoutMs = waitMs(args);
-        return settle(timeoutMs, "delta", await mayActInGame(), signal);
+        await requireGame();
+        return settle(timeoutMs, "delta", signal);
       }
     },
     {
@@ -301,7 +297,8 @@ export function createDominionTools(client: Pick<DominionClient, "call" | "join"
         const kingdom = args.kingdom === undefined ? undefined : list(args, "kingdom", "string");
         const result = await client.call("startBotGame", [{ bots, ...(kingdom ? { kingdom } : {}) }], { timeoutMs: START_GAME_TIMEOUT_MS });
         if (!result.ok) throw new Error(`Could not start a game: ${result.error}`);
-        return settle(DEFAULT_WAIT_S * 1000, "full", await mayActInGame(), signal);
+        await requireGame();
+        return settle(DEFAULT_WAIT_S * 1000, "full", signal);
       }
     },
     {

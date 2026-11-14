@@ -73,7 +73,7 @@ The launcher and the scripts read their settings from `$XDG_CONFIG_HOME/dominion
 ```json
 {
   "chrome": { "profile": "~/.local/state/dominion-navigator/chrome-profile", "debugPort": 9226, "binary": "google-chrome-stable", "url": "https://dominion.games/" },
-  "agent": { "command": "claude", "cwd": "~/projects/dominion-playbook", "model": "opus", "allowHumanOpponents": true, "allowedTools": ["mcp__dominion", "Read", "Glob", "Grep", "Skill"], "extraArgs": [] }
+  "agent": { "command": "claude", "cwd": "~/projects/dominion-playbook", "model": "opus", "allowedTools": ["mcp__dominion", "Read", "Glob", "Grep", "Skill"], "extraArgs": [] }
 }
 ```
 
@@ -169,7 +169,7 @@ node --import tsx scripts/mcp-server.ts
 
 `step` first echoes what it chose by label, as a `CHOSE` line. `step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
 
-`step` refuses to act in a game that seats human opponents. Start the server with `--allow-human-opponents` to lift that.
+`step` plays games against bots and human opponents alike.
 
 `step` also takes an optional `reason`, a short note on why the agent chose what it did. Start the server with `--game-log-dir <dir>` (or set `DOMINION_GAME_LOG_DIR`) to keep a log of each game under that directory, named by game number:
 
@@ -248,7 +248,7 @@ Each prompt carries the tab's agent token and tells the agent to call `join` wit
 
 A token also ends when a new game starts in the tab. It is kept in the tab's `sessionStorage`, so it survives a reload of the tab. It says which game to play and when to stop; it is not a secret that keeps other local agents out, since the MCP server can drive any game in that Chrome without one. A session that joined a player's game cannot call `new_game` or `resign`.
 
-The agent's MCP server plays through the Chrome that `npm run launch:chrome` starts, so the game must be open there, and `step` still refuses games that seat human opponents unless that server is started with `--allow-human-opponents`.
+The agent's MCP server plays through the Chrome that `npm run launch:chrome` starts, so the game must be open there.
 
 ### Starting agents from the overlay
 
@@ -256,5 +256,4 @@ In the launcher's Chrome, the Agent box also shows **Ask Agent** and **Agent Tak
 
 - The overlay reaches the launcher through a CDP binding that the launcher adds to the extension's content-script world in each tab. The page's own scripts cannot see it, and other Chromes have no launcher, so the buttons appear only there.
 - The agent runs in `agent.cwd` from the config, with `--permission-mode dontAsk` and only `agent.allowedTools` allowed. Point `agent.cwd` at a checkout whose instructions and skills you want it to use, such as dominion-playbook.
-- Agents started here play human opponents too: the server gets `--allow-human-opponents`, and the take-over prompt tells the agent the player chose to hand it the game. Set `agent.allowHumanOpponents` to `false` to keep them to games against bots.
 - Each run's `stream-json` output is kept in `$XDG_STATE_HOME/dominion-navigator/agents/`. Hover over an agent's text in the overlay to see its log path.

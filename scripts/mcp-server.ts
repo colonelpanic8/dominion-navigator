@@ -1,5 +1,5 @@
 // MCP server (stdio) that lets an agent play dominion.games through Dominion Navigator.
-// Usage: node --import tsx scripts/mcp-server.ts [--allow-human-opponents] [--game-log-dir <dir>] [--game-log-meta <json>]
+// Usage: node --import tsx scripts/mcp-server.ts [--game-log-dir <dir>] [--game-log-meta <json>]
 // It attaches to the Chrome started by `npm run launch:chrome` (DOMINION_NAVIGATOR_DEBUG_PORT).
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -15,7 +15,6 @@ import { serveTools } from "./lib/mcp-stdio";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({
   options: {
-    "allow-human-opponents": { type: "boolean", default: false },
     "game-log-dir": { type: "string" },
     "game-log-meta": { type: "string" }
   }
@@ -55,7 +54,6 @@ serveTools({
   version,
   instructions: INSTRUCTIONS,
   tools: createDominionTools(new DominionClient(), cardShapedObjects, {
-    allowHumanOpponents: args["allow-human-opponents"],
     ...(gameLogDir ? { gameLog: new GameLog(resolve(gameLogDir), { server: serverVersion(), ...parseMeta(gameLogMeta) }) } : {})
   })
 });

@@ -195,15 +195,11 @@ test("a game log records each answer with its reason, AUTO answers and the resul
   assert.match(String(errors.mock.calls[0]?.arguments[0]), /could not write the game log/);
 });
 
-test("step does not act against human opponents unless that is allowed", async () => {
-  const guarded = fakeClient([firstBuy], false);
-  await assert.rejects(tool(createDominionTools(guarded.client, cardData), "step").run({ decision: firstBuy.decision!.id, choose: [] }, live), /human opponents/);
-  assert.deepEqual(guarded.answers, []);
-
-  const allowed = fakeClient([firstBuy, secondBuy], false);
+test("step plays games against human opponents", async () => {
+  const { answers, client } = fakeClient([firstBuy, secondBuy], false);
   const buy = firstBuy.decision!.options.find((option) => option.label === "Silver")!.index;
-  await tool(createDominionTools(allowed.client, cardData, { allowHumanOpponents: true }), "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
-  assert.equal(allowed.answers.length, 1);
+  await tool(createDominionTools(client, cardData), "step").run({ decision: firstBuy.decision!.id, choose: [buy] }, live);
+  assert.equal(answers.length, 1);
 });
 
 test("a session that joined with an agent token plays until the player takes the game back", async () => {
@@ -316,14 +312,6 @@ test("table notes name landscape piles by their card and say when a token is on 
     "Ann's Estate token is on their Tavern mat.",
     "Battlefield has 12 VP tokens."
   ]);
-});
-
-test("wait shows a forced decision without answering it in a game against people", async () => {
-  const { answers, client } = fakeClient([startGame, firstBuy], false);
-  const shownView = await tool(createDominionTools(client, cardData), "wait").run({}, live);
-  assert.deepEqual(answers, []);
-  assert.match(shownView, new RegExp(`^DECISION ${startGame.decision!.id}: `, "m"));
-  assert.match(shownView, /human opponents/);
 });
 
 test("a view is only a delta base once it was delivered, and log lines are shown once", async () => {

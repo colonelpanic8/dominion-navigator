@@ -4,7 +4,6 @@ export type NavigatorConfig = {
     command?: string;
     cwd?: string;
     model?: string;
-    allowHumanOpponents?: boolean;
     allowedTools?: string[];
     extraArgs?: string[];
   };
