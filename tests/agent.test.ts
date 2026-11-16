@@ -174,7 +174,7 @@ test("alternatives follow a nested OR, so a buy is never offered alongside treas
   assert.equal(resolveAnswer(root, "d2", [1, 2]).ok, true);
 });
 
-test("a Way requires its Action in the same answer, and optional End Actions still ends the phase", () => {
+test("a Way requires its Action, and phase-ending choices stay out of optional-effect groups", () => {
   const root: RawQuestion = {
     questionClass: "complex", type: "COMPLEX_OR", questionId: "GAME_ACTION_PHASE", prompt: "You may play Actions", path: [],
     subquestions: [
@@ -192,9 +192,22 @@ test("a Way requires its Action in the same answer, and optional End Actions sti
   assert.equal(resolveAnswer(root, "dway", [0, 2]).ok, true);
   assert.equal(resolveAnswer(root, "dway", [0]).ok, true);
   assert.equal(resolveAnswer(root, "dway", [1]).ok, true);
-  const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: buildDecision(root, "dway") });
+  const decision = buildDecision(root, "dway");
+  assert.deepEqual(decision.options.filter((option) => option.label === "End Actions").map((option) => decision.groups[option.group]!.kind), ["play"]);
+  assert.deepEqual(decision.options.filter((option) => decision.groups[option.group]!.kind === "delayed").map((option) => option.label), ["Gold & 4 Debt"]);
+  assert.deepEqual(resolveAnswer(root, "dway", [3]), { ok: true, plan: { leaves: [{ path: [1], action: "accept" }] } });
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision });
   assert.match(text, /NOTE to use a Way, choose both/);
-  assert.match(text, /NOTE End Actions ends the entire Action phase/);
+  assert.match(text, /End Actions ends the entire Action phase; it does not just decline the optional effect/);
+});
+
+test("standalone optional effects retain genuine decline choices", () => {
+  const question: RawQuestion = {
+    questionClass: "delayed", type: "DELAYED", questionId: "GOLD_MINE", prompt: "Gain a Gold and get 4 debt?", path: [],
+    declineLabel: "Don't gain", declineEndsPhase: false, acceptLabel: "Gold & 4 Debt"
+  };
+  assert.deepEqual(buildDecision(question, "doptional").options.map((option) => option.label), ["Gold & 4 Debt", "Don't gain"]);
+  assert.deepEqual(resolveAnswer(question, "doptional", [1]), { ok: true, plan: { leaves: [{ path: [], action: "decline" }] } });
 });
 
 test("a split pile names the cards under its top card", () => {
@@ -343,6 +356,30 @@ test("an opponent's finished turns are summarized from the log", () => {
   ];
   assert.deepEqual(completedTurns(lines, ["Bot"]), [{ turn: 6, player: "Bot", coins: 6, bought: ["Gold", "Sea Trade"], gained: ["2 Silvers"] }]);
   assert.match(renderAgentViewText(view(fixtures.find((item) => item.source.endsWith("#8"))!)), /^OPPONENT TURNS\n {2}turn 3 Lord Rattington: made \$5, bought Silver$/m);
+});
+
+test("opponent income includes Actions and Durations, without counting another player's money or spending", () => {
+  const lines = [
+    "Turn 7 - MightyQuin",
+    "MightyQuin gets +$3. (Gatekeeper)",
+    "MightyQuin plays a Swindler.",
+    "MightyQuin gets +$2.",
+    "MightyQuin plays a Bridge.",
+    "MightyQuin gets +$1.",
+    "colonelpanic8 gets +$9.",
+    "MightyQuin plays 3 Coppers and a Gold. (+$6)",
+    "MightyQuin pays off $2 debt.",
+    "MightyQuin buys and gains a Province.",
+    "Turn 7 - colonelpanic8"
+  ];
+  assert.deepEqual(completedTurns(lines, ["MightyQuin"]), [
+    { turn: 7, player: "MightyQuin", coins: 12, bought: ["Province"], gained: [] }
+  ]);
+  const swindlerTurn = [
+    "Turn 7 - MightyQuin", "MightyQuin gets +$2.", "MightyQuin plays 3 Coppers and a Gold. (+$6)",
+    "MightyQuin buys and gains a Province.", "Turn 7 - colonelpanic8"
+  ];
+  assert.equal(completedTurns(swindlerTurn, ["MightyQuin"])[0]!.coins, 8);
 });
 
 function errorOf(result: { ok: boolean; error?: string }): string {

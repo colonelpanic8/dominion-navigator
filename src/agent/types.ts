@@ -65,6 +65,8 @@ export type RawQuestion = {
   min?: number;
   max?: number;
   declineLabel?: string;
+  /** The client's decline button ends the phase rather than skipping just this effect. */
+  declineEndsPhase?: boolean;
   elements?: RawQuestionElement[];
   subquestions?: RawQuestion[];
   /** For delayed questions: the label of the accept button. */

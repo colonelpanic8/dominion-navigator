@@ -148,14 +148,29 @@ type Indexed = {
   targets: Array<{ leaf: number; target: OptionTarget }>;
 };
 
+function endsPhase(question: RawQuestion): boolean {
+  return question.declineEndsPhase ?? /^End (Actions|Buys|Turn)$/i.test(question.declineLabel ?? "");
+}
+
 function index(root: RawQuestion, id: string): Indexed {
   const groups: DecisionGroup[] = [];
   const options: DecisionOption[] = [];
   const leaves: Leaf[] = [];
   const targets: Indexed["targets"] = [];
 
-  for (const question of leavesOf(root)) {
-    const leafOpts = leafOptions(question);
+  const questions = leavesOf(root);
+  for (const question of questions) {
+    const duplicatePhaseEnd =
+      question.questionClass === "delayed" &&
+      endsPhase(question) &&
+      questions.some(
+        (other) =>
+          other.questionClass !== "delayed" &&
+          endsPhase(other) &&
+          other.declineLabel === question.declineLabel &&
+          !sharedAndAncestor(root, [question.path, other.path])
+      );
+    const leafOpts = leafOptions(question).filter(({ target }) => !duplicatePhaseEnd || target.action !== "decline");
     if (leafOpts.length === 0) continue;
     const group: DecisionGroup = {
       group: groups.length,

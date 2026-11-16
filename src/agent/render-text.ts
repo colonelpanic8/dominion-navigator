@@ -78,9 +78,9 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   if (value.groups.some((group) => group.kind === "way") && value.groups.some((group) => ["play", "resolve-ability"].includes(group.kind))) {
     notes.push("NOTE to use a Way, choose both the Action card or ability and the Way in the same step. Choosing only a Way does not play a card.");
   }
-  if (value.options.some((option) => option.kind === "decline" && option.label === "End Actions" && value.groups[option.group]?.kind === "delayed")) {
+  if (value.groups.some((group) => group.kind === "delayed") && value.options.some((option) => option.kind === "decline" && option.label === "End Actions")) {
     notes.push(
-      "NOTE End Actions ends the entire Action phase, including when listed under an optional effect. To skip that effect and keep playing Actions, choose the next Action instead."
+      "NOTE optional effects can be left unused by choosing your next Action instead. End Actions ends the entire Action phase; it does not just decline the optional effect."
     );
   }
   const buyGroup = value.groups.find((group) => group.kind === "buy");

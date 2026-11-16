@@ -127,7 +127,8 @@ function readQuestion(game: RuntimeGame, question: RuntimeQuestion, path: number
     path,
     ...(question.min !== undefined ? { min: question.min } : {}),
     ...(question.max !== undefined ? { max: question.max } : {}),
-    ...(declineLabel ? { declineLabel } : {})
+    ...(declineLabel ? { declineLabel } : {}),
+    ...((declineEnum as { isEndButton?: boolean } | undefined)?.isEndButton ? { declineEndsPhase: true } : {})
   };
 
   switch (questionClassName) {
@@ -186,6 +187,11 @@ function execute(root: RuntimeQuestion, leaves: LeafAnswer[]): void {
 
   const [first] = nodes;
   if (!first) return;
+  const clearWaySelections = (question: RuntimeQuestion): void => {
+    if (dominion.QuestionTypes?.WAY && question.type === dominion.QuestionTypes.WAY) question.accumulatedAnswers = [];
+    for (const child of question.subquestions ?? []) clearWaySelections(child);
+  };
+  clearWaySelections(root);
   const { leaf, node } = first;
   switch (leaf.action) {
     case "select":

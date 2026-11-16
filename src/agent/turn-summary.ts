@@ -1,7 +1,7 @@
 export type TurnSummary = {
   turn: number;
   player: string;
-  /** The $ the turn's log lines report the player making, e.g. "(+$5)". */
+  /** The $ the turn's log lines report the player making. */
   coins: number;
   bought: string[];
   gained: string[];
@@ -19,7 +19,12 @@ function summarize(turn: number, player: string, lines: string[]): TurnSummary {
   for (const line of lines) {
     if (!line.startsWith(own)) continue;
     const action = line.slice(own.length);
-    for (const match of action.matchAll(/\(\+\$(\d+)\)/g)) summary.coins += Number(match[1]);
+    const directIncome = /^gets \+\$(\d+)(?=[.\s]|$)/.exec(action);
+    if (directIncome) {
+      summary.coins += Number(directIncome[1]);
+    } else {
+      for (const match of action.matchAll(/\(\+\$(\d+)\)/g)) summary.coins += Number(match[1]);
+    }
     const bought = /^buys(?: and gains)? (.+)\.$/.exec(action)?.[1];
     if (bought) summary.bought.push(withoutArticle(bought));
     const gained = /^gains (.+)\.$/.exec(action)?.[1];
