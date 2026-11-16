@@ -61,9 +61,7 @@ function traits(view: AgentView): Map<string, string> {
 }
 
 function pileCosts(view: AgentView): Map<string, Cost> {
-  return new Map(
-    [...view.supply, ...view.nonSupply, ...view.landscapes].filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!] as const)
-  );
+  return new Map([...view.supply, ...view.nonSupply, ...view.landscapes].filter((pile) => pile.cost).map((pile) => [pile.card, pile.cost!] as const));
 }
 
 const AUTOPLAY = "Autoplay Treasures";
@@ -77,6 +75,14 @@ function pileTypes(view: AgentView): Map<string, string[]> {
 /** Things a decision's options do not say on their own that agents have tripped on. */
 function decisionNotes(view: AgentView, value: Decision): string[] {
   const notes: string[] = [];
+  if (value.groups.some((group) => group.kind === "way") && value.groups.some((group) => ["play", "resolve-ability"].includes(group.kind))) {
+    notes.push("NOTE to use a Way, choose both the Action card or ability and the Way in the same step. Choosing only a Way does not play a card.");
+  }
+  if (value.options.some((option) => option.kind === "decline" && option.label === "End Actions" && value.groups[option.group]?.kind === "delayed")) {
+    notes.push(
+      "NOTE End Actions ends the entire Action phase, including when listed under an optional effect. To skip that effect and keep playing Actions, choose the next Action instead."
+    );
+  }
   const buyGroup = value.groups.find((group) => group.kind === "buy");
   if (!buyGroup) return notes;
   const buyOptions = value.options.filter((option) => option.group === buyGroup.group);
@@ -85,7 +91,11 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   const buys = view.turn.buys;
   const playGroup = value.groups.find((group) => group.kind === "play");
   const playable = value.options.filter((option) => option.group === playGroup?.group && option.card);
-  const playOptions = (cards: Set<string>): string => playable.filter((option) => cards.has(option.card!)).map((option) => `${option.index} (${option.label})`).join(", ");
+  const playOptions = (cards: Set<string>): string =>
+    playable
+      .filter((option) => cards.has(option.card!))
+      .map((option) => `${option.index} (${option.label})`)
+      .join(", ");
   const variable = new Set(view.turn.treasureInHand?.variable ?? []);
   const special = new Set(playable.map((option) => option.card!).filter((card) => !PLAIN_TREASURES.has(card) && !variable.has(card)));
   if (variable.size && playOptions(variable)) {
@@ -111,7 +121,9 @@ function decisionNotes(view: AgentView, value: Decision): string[] {
   const night = Object.keys(view.you?.hand.known ?? {}).filter((card) => types.get(card)?.includes("Night"));
   const endBuys = buyOptions.find((option) => option.kind === "decline");
   if (night.length && endBuys) {
-    notes.push(`NOTE Night cards are played after the Buy phase. To play ${night.join(", ")}, choose ${endBuys.index} (${endBuys.label}) when done buying; that moves on to the Night phase.`);
+    notes.push(
+      `NOTE Night cards are played after the Buy phase. To play ${night.join(", ")}, choose ${endBuys.index} (${endBuys.label}) when done buying; that moves on to the Night phase.`
+    );
   }
   return notes;
 }
@@ -140,7 +152,9 @@ function decision(view: AgentView, value: Decision): string[] {
   const multipleGroups = value.groups.length > 1;
   for (const group of value.groups) {
     const bounds = group.order
-      ? `choose all ${group.max} in order, bottom card first and top card last`
+      ? group.order === "top-to-bottom"
+        ? `choose all ${group.max} in order: indices top card first (legacy choose: bottom card first)`
+        : `choose all ${group.max} in order, bottom card first and top card last`
       : group.min === group.max
         ? `choose ${group.min}`
         : `choose ${group.min}-${group.max}`;
@@ -233,22 +247,45 @@ function blocks(view: AgentView): Block[] {
   const result: Block[] = [{ kind: "lines", key: "game", lines: game, always: true }];
   if (view.you) result.push({ kind: "lines", key: `player:${view.you.index}`, lines: player("YOU", view.you) });
   for (const opponent of view.opponents) result.push({ kind: "lines", key: `player:${opponent.index}`, lines: player("OPPONENT", opponent) });
-  result.push({ kind: "piles", key: "supply", label: "SUPPLY", piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
+  result.push({
+    kind: "piles",
+    key: "supply",
+    label: "SUPPLY",
+    piles: view.supply.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` }))
+  });
   if (view.landscapes.length) {
-    result.push({ kind: "piles", key: "landscapes", label: "LANDSCAPES", piles: view.landscapes.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)}` })) });
+    result.push({
+      kind: "piles",
+      key: "landscapes",
+      label: "LANDSCAPES",
+      piles: view.landscapes.map((pile) => ({ card: pile.card, text: `${pile.card} ${cost(pile.cost)}` }))
+    });
   }
   if (view.nonSupply.length) {
-    result.push({ kind: "piles", key: "non-supply", label: "NON-SUPPLY", piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` })) });
+    result.push({
+      kind: "piles",
+      key: "non-supply",
+      label: "NON-SUPPLY",
+      piles: view.nonSupply.map((pile) => ({ card: pile.card, text: `${pile.card} x${pile.count}${traitLabel(pile.trait)}${others(pile)}` }))
+    });
   }
   const trash = cards(view.trash.cards);
   result.push({ kind: "lines", key: "trash", lines: [`TRASH ${trash || "empty"}${view.trash.unknown ? `; ${view.trash.unknown} unknown` : ""}`] });
   if (view.notes?.length) {
-    result.push({ kind: "lines", key: "notes", lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)], gone: "ALSO (none of the earlier notes apply any more)" });
+    result.push({
+      kind: "lines",
+      key: "notes",
+      lines: ["ALSO", ...view.notes.map((note) => `  ${note}`)],
+      gone: "ALSO (none of the earlier notes apply any more)"
+    });
   }
   if (view.sinceLastDecision.length) {
     result.push({ kind: "lines", key: "log", lines: ["LOG", ...view.sinceLastDecision.map((line) => `  ${line}`)], always: true });
   }
-  const turns = completedTurns(view.sinceLastDecision, view.opponents.map((opponent) => opponent.name));
+  const turns = completedTurns(
+    view.sinceLastDecision,
+    view.opponents.map((opponent) => opponent.name)
+  );
   if (turns.length) result.push({ kind: "lines", key: "turns", lines: ["OPPONENT TURNS", ...turns.map(turnLine)], always: true });
   if (view.decision) result.push({ kind: "lines", key: "decision", lines: decision(view, view.decision), always: true });
   return result;

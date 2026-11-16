@@ -160,6 +160,7 @@ node --import tsx scripts/mcp-server.ts
 | `step` | Answers the open decision by option label or number, waits for the next decision, and returns what changed. |
 | `wait` | Waits for the next decision without answering. |
 | `new_game` | Starts an unrated bot game, optionally with a chosen kingdom. |
+| `find_match` | Finds a human opponent through automatch, readies up, and returns the game. Accepts `players` (2 or 3), `rated` (true, false, or `"any"`), and `timeout_s` (10–300). |
 | `resign` | Resigns the game in progress. |
 | `log` | Rereads the game log. |
 | `cards` | Card text, types and current cost by name. |
@@ -168,6 +169,12 @@ node --import tsx scripts/mcp-server.ts
 `step` takes each option as a label or a number. Labels are the safer default, because a card's number can change between decisions. A label matches without case (`"Silver"`), may carry its group kind to pick between groups (`"buy:Silver"`, `"play:Copper"`), and takes one more matching option each time it is repeated (`["Copper", "Copper"]`). A label that matches nothing, or options that are not interchangeable, fails without acting and lists the options. Labels are resolved by the MCP server; the page API takes option numbers only.
 
 `step` first echoes what it chose by label, as a `CHOSE` line. `step` and `wait` return a delta against the view the caller was last shown: the status line, new log lines and the next decision in full, and only the players and piles that changed. `state` prints everything, except for a finished game. Each opponent turn that ends within the new log lines gets an `OPPONENT TURNS` line with the $ it made and what it bought and gained. Decisions with a single legal answer are answered on the way and reported as `AUTO` lines. In a recorded nine-turn game an agent made 27 `step` calls, and the results averaged 838 characters.
+
+`indices` is the common `dominion/play@1` answer: non-negative option numbers, with ordered answers **top card first**. The Navigator `choose` extra still accepts labels or numbers and keeps its legacy **bottom card first** ordering. Give exactly one of `indices` and `choose`. An optional `expect` array checks the corresponding option labels or card names before any move is made, ignoring case, punctuation, whitespace and a label’s trailing parenthesis. To play an Action using a Way, choose the Action and the Way together; choosing only a Way is rejected. An `End Actions` option beside an optional effect ends the whole Action phase; play the next Action to leave that effect unused.
+
+Navigator shares the `state` / `step` / `wait` / `cards` / `log` gameplay vocabulary with dominion-arena, while remaining the dominion.games browser backend. Game-bearing MCP results include `{view, glossary}` structured content projected to `dominion/agent-view@2`; the page API and tracker retain `dominion-navigator/agent-view@1`. Startup and launched-agent prompts distinguish common gameplay from Navigator controls. This is partial compatibility, not full protocol conformance: see [the exact compatibility and limitations](protocol/README.md).
+
+`new_game` also accepts `landscapes` and total `players`. Required landscapes are combined with the kingdom for the dominion.games setup. Only bot opponents can be created: `players` must equal `bots + 1` (default one bot); reserved agent seats and their tokens are unavailable. A chosen kingdom or landscape requires one bot. Unknown tool arguments are rejected.
 
 `step` plays games against bots and human opponents alike.
 
@@ -252,8 +259,22 @@ The agent's MCP server plays through the Chrome that `npm run launch:chrome` sta
 
 ### Starting agents from the overlay
 
-In the launcher's Chrome, the Agent box also shows **Ask Agent** and **Agent Takes Over**. These start the agent themselves, with no copying: the launcher runs `claude -p` with the prompt the Copy buttons would have copied, gives it the `dominion` MCP server through `--mcp-config` for that run only (nothing is registered globally), and shows its progress and final answer in the overlay. Take Back, or an agent's Stop button, ends the process.
+In the launcher's Chrome, the Agent box also shows **Ask Agent** and **Agent Takes Over**. These start the agent themselves, with no copying: the launcher runs the configured Claude or Codex agent with the prompt the Copy buttons would have copied, gives it the `dominion` MCP server for that run only (nothing is registered globally), and shows its progress and final answer in the overlay. Take Back, or an agent's Stop button, ends the process.
 
 - The overlay reaches the launcher through a CDP binding that the launcher adds to the extension's content-script world in each tab. The page's own scripts cannot see it, and other Chromes have no launcher, so the buttons appear only there.
-- The agent runs in `agent.cwd` from the config, with `--permission-mode dontAsk` and only `agent.allowedTools` allowed. Point `agent.cwd` at a checkout whose instructions and skills you want it to use, such as dominion-playbook.
-- Each run's `stream-json` output is kept in `$XDG_STATE_HOME/dominion-navigator/agents/`. Hover over an agent's text in the overlay to see its log path.
+- The agent runs in `agent.cwd` from the config. Claude uses `--permission-mode dontAsk` and `agent.allowedTools`; Codex uses the configuration described below. Point `agent.cwd` at a checkout whose instructions and skills you want it to use, such as dominion-playbook.
+- Each run's JSON event stream is kept in `$XDG_STATE_HOME/dominion-navigator/agents/`. Hover over an agent's text in the overlay to see its log path.
+
+### Playing a matchmade game with Codex
+
+With the launcher's Chrome logged in, start a player using dominion-playbook's instructions and skills:
+
+```sh
+npm run agent:match -- --model gpt-6.1-sol --effort high --cwd ~/projects/dominion-playbook
+```
+
+The player reads the playbook before searching for a human opponent, plays one game to its result, and reports its plan and key decisions. An existing human game is continued; an unfinished bot game must be finished or resigned first. Ctrl-C stops the agent process; it does not resign a game.
+
+The launcher supports `agent.program` (`"claude"` or `"codex"`), `agent.model`, `agent.effort`, `agent.cwd`, and `agent.gameLogDir` in the same JSON config. The program is inferred from the command or model when omitted. `agent:match` defaults to `gpt-6.1-sol` unless the config or command line selects a model. Command-line options override the file for that run. Codex runs with full filesystem access and no approval prompts, with only the run's Dominion MCP server configured. Matchmaking tool calls allow enough time to search and wait for the first decision.
+
+Agent transcripts are saved under `$XDG_STATE_HOME/dominion-navigator/agents/`. Game decisions, reasons, result and model metadata are saved under `$XDG_STATE_HOME/dominion-navigator/games/` (or `agent.gameLogDir`).

@@ -17,6 +17,7 @@ type NavigatorApi = {
   getLog(options: { afterIndex?: number; limit?: number }): LogPage;
   inspect(path: string, options: InspectOptions): InspectResult;
   startBotGame(options: { bots: number; kingdom?: string[] }): ActionResult;
+  findMatch(options?: { players?: 2 | 3 | "any"; rated?: boolean | "any"; maxRatingDifference?: number; timeoutMs?: number }): ActionResult;
   resign(): ActionResult;
 };
 

@@ -266,6 +266,17 @@ export function resolveAnswer(root: RawQuestion, id: string, indices: number[]):
     byLeaf.set(item.leaf, [...(byLeaf.get(item.leaf) ?? []), item.target.element]);
   }
 
+  for (const leafIndex of byLeaf.keys()) {
+    const way = leaves[leafIndex]!.question;
+    if (way.type !== "WAY") continue;
+    const source = leaves.findIndex(({ question }) =>
+      ["PLAY", "RESOLVE_ABILITY"].includes(question.type) && Boolean(sharedAndAncestor(root, [way.path, question.path]))
+    );
+    if (source >= 0 && !byLeaf.has(source)) {
+      return { ok: false, error: "choose the Action card or ability together with its Way; a Way alone does not play anything" };
+    }
+  }
+
   if (byLeaf.size > 1) {
     const paths = [...byLeaf.keys()].map((leaf) => leaves[leaf]!.question.path);
     const ancestor = sharedAndAncestor(root, paths);

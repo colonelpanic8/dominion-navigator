@@ -3,16 +3,25 @@
 // corrupt the stream, so diagnostics go to stderr.
 import { createInterface } from "node:readline";
 
+export type ToolResult = {
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+};
+
+export function toolResult(text: string, structuredContent?: Record<string, unknown>): ToolResult {
+  return { content: [{ type: "text", text }], ...(structuredContent ? { structuredContent } : {}) };
+}
+
 export type Tool = {
   name: string;
   description: string;
   /** JSON Schema for the arguments object. */
   inputSchema: object;
   /**
-   * Returns the text result; a thrown error becomes an error result the model can
+   * Returns text or an MCP result with structured content; a thrown error becomes an error result the model can
    * read. `signal` aborts when the client cancels the call, after which the result is discarded.
    */
-  run(args: Record<string, unknown>, signal: AbortSignal): Promise<string>;
+  run(args: Record<string, unknown>, signal: AbortSignal): Promise<string | ToolResult>;
 };
 
 export type ServerInfo = {
@@ -60,7 +69,8 @@ async function handle(server: ServerInfo, method: string, params: Record<string,
       if (!tool) throw new RpcError(INVALID_PARAMS, `unknown tool ${String(params.name)}`);
       const args = params.arguments && typeof params.arguments === "object" ? (params.arguments as Record<string, unknown>) : {};
       try {
-        return { content: [{ type: "text", text: await tool.run(args, signal) }] };
+        const result = await tool.run(args, signal);
+        return typeof result === "string" ? toolResult(result) : result;
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }

@@ -17,6 +17,9 @@ const port = debugPort();
 const url = process.env.DOMINION_NAVIGATOR_URL ?? config.chrome?.url ?? "https://dominion.games/";
 const BLANK_PAGE_URLS = new Set(["about:blank", "chrome://newtab/", "chrome://new-tab-page/"]);
 
+// Chrome creates its SingletonSocket under TMPDIR and crashes if the path exceeds the UNIX socket limit (~104 bytes).
+if ((process.env.TMPDIR ?? "").length > 60) process.env.TMPDIR = "/tmp";
+
 async function runningLauncherPid() {
   try {
     const pid = Number((await readFile(pidFile, "utf8")).trim());

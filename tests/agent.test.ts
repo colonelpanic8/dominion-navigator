@@ -174,6 +174,29 @@ test("alternatives follow a nested OR, so a buy is never offered alongside treas
   assert.equal(resolveAnswer(root, "d2", [1, 2]).ok, true);
 });
 
+test("a Way requires its Action in the same answer, and optional End Actions still ends the phase", () => {
+  const root: RawQuestion = {
+    questionClass: "complex", type: "COMPLEX_OR", questionId: "GAME_ACTION_PHASE", prompt: "You may play Actions", path: [],
+    subquestions: [
+      {
+        questionClass: "complex", type: "COMPLEX_AND", questionId: "GAME_ACTION_PHASE", prompt: "You may play Actions", path: [0],
+        subquestions: [
+          { questionClass: "choice", type: "PLAY", questionId: "GAME_ACTION_PHASE", prompt: "You may play Actions", path: [0, 0], min: 0, max: 1, declineLabel: "End Actions", elements: [{ kind: "card", label: "Sycophant", card: "Sycophant" }] },
+          { questionClass: "choice", type: "WAY", questionId: "GAME_ACTION_PHASE", prompt: "You may play Actions", path: [0, 1], min: 0, max: 1, elements: [{ kind: "card", label: "Way Of The Worm", card: "Way Of The Worm" }] }
+        ]
+      },
+      { questionClass: "delayed", type: "DELAYED", questionId: "GOLD_MINE", prompt: "Gain a Gold and get 4 debt?", path: [1], declineLabel: "End Actions", acceptLabel: "Gold & 4 Debt" }
+    ]
+  };
+  assert.match(errorOf(resolveAnswer(root, "dway", [2])), /Action card or ability together with its Way/);
+  assert.equal(resolveAnswer(root, "dway", [0, 2]).ok, true);
+  assert.equal(resolveAnswer(root, "dway", [0]).ok, true);
+  assert.equal(resolveAnswer(root, "dway", [1]).ok, true);
+  const text = renderAgentViewText({ ...view(fixture("REMODEL_GAIN")), decision: buildDecision(root, "dway") });
+  assert.match(text, /NOTE to use a Way, choose both/);
+  assert.match(text, /NOTE End Actions ends the entire Action phase/);
+});
+
 test("a split pile names the cards under its top card", () => {
   const piles = splitPiles(cardData.cardShapedObjects);
   assert.deepEqual(piles.get("Tent"), ["Garrison", "Hill Fort", "Stronghold", "Tent"]);

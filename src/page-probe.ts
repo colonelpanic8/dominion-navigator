@@ -6,7 +6,7 @@ import { CardMoveSummary, MESSAGE_SOURCE, NavigatorSnapshot } from "./messages";
 import { AgentBridge, WaitResult } from "./probe/agent-bridge";
 import { showDrawKnowledgeWindow } from "./probe/knowledge-modal";
 import { DominionGlobals, getGame, getService, RuntimeCardMove, RuntimeGame } from "./probe/runtime-types";
-import { NewGameOptions, readSession, resignGame, startBotGame } from "./probe/session";
+import { FindMatchOptions, findMatch, NewGameOptions, readSession, resignGame, startBotGame } from "./probe/session";
 import type { AnswerResult } from "./probe/questions";
 import { GAME_NOT_READY, postStatus } from "./probe/status";
 import { gameFingerprint, makeMoveSummary, makeSnapshot } from "./probe/summaries";
@@ -32,6 +32,7 @@ type ProbeState = {
   getLog: (options?: { afterIndex?: number; limit?: number }) => LogPage;
   inspect: (path: string, options?: InspectOptions) => InspectResult;
   startBotGame: (options: NewGameOptions) => Promise<ActionResult>;
+  findMatch: (options?: FindMatchOptions) => Promise<ActionResult>;
   resign: () => Promise<ActionResult>;
 };
 
@@ -193,6 +194,7 @@ function install(): void {
     getLog: (options) => agent.getLog(options),
     inspect: (path, options) => inspectPath(INSPECT_ROOTS, path, options),
     startBotGame,
+    findMatch,
     resign: resignGame
   };
   win.__dominionNavigator = probe;

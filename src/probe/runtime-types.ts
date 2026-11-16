@@ -165,6 +165,8 @@ export type RuntimeTableService = {
   getTable?: () => RuntimeTableDetails;
   getPlayers?: () => Array<{ name?: string }>;
   heroIsHost?: () => boolean;
+  heroIsReady?: () => boolean;
+  isReady?: (playerId: number) => boolean;
   openSeatCount?: () => number;
   ready?: () => void;
   leave?: () => void;
@@ -182,8 +184,21 @@ export type RuntimeKingdomService = {
   addMultiple?: (picks: Array<{ card: RuntimeCardName; mode: RuntimeCardName }>) => void;
 };
 
+export type RuntimeMatchingCriteria = {
+  searchesBot?: number;
+  searchesHuman?: boolean;
+  maxRatingDifference?: number;
+  minRatingDifference?: number;
+  automatchPreferences?: Map<RuntimeEnumValue, RuntimeEnumValue>;
+};
+
 export type RuntimeAutomatch = {
   botMatch?: (bots: number) => void;
+  matchingCriteria?: RuntimeMatchingCriteria;
+  searchNow?: () => void;
+  cancel?: () => void;
+  iAmSearching?: () => boolean;
+  getAutomatchCandidates?: () => string;
 };
 
 export type RuntimeServerMessenger = {
@@ -241,6 +256,8 @@ export type DominionGlobals = {
   QuestionTypes?: Record<string, RuntimeEnumValue>;
   QuestionIds?: Record<string, RuntimeEnumValue>;
   TableRuleIds?: Record<string, RuntimeEnumValue>;
+  AUTOMATCH_QUESTION?: Record<string, RuntimeEnumValue>;
+  MATCHING_PREFERENCE?: Record<string, RuntimeEnumValue>;
   /** Keys are turn kinds in ordinal order, REGULAR first. */
   ExtraTurnTypes?: Record<string, RuntimeEnumValue>;
   TableRule?: new (id: RuntimeEnumValue, value: unknown, args?: unknown) => unknown;

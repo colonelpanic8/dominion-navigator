@@ -23,7 +23,7 @@ test("the launcher accepts only well-formed requests that carry an agent token",
   assert.equal(parseLauncherRequest("{").ok, false);
 });
 
-test("an agent gets the dominion server for its run only, and no tools beyond the allowed ones", () => {
+test("the launcher configures each provider and gives it the dominion server for its run only", () => {
   const { command, args, cwd } = agentCommand({ root: "/repo", tsxLoader: "file:///repo/node_modules/tsx/dist/loader.mjs", agent: {} });
   assert.equal(command, "claude");
   assert.equal(cwd, "/repo");
@@ -33,9 +33,28 @@ test("an agent gets the dominion server for its run only, and no tools beyond th
   const server = JSON.parse(args[args.indexOf("--mcp-config") + 1]!).mcpServers.dominion;
   assert.deepEqual(server.args, ["--import", "file:///repo/node_modules/tsx/dist/loader.mjs", "/repo/scripts/mcp-server.ts"]);
 
-  const configured = agentCommand({ root: "/repo", tsxLoader: "tsx", agent: { model: "opus", cwd: "/play" } });
+  const configured = agentCommand({ root: "/repo", tsxLoader: "tsx", agent: { model: "opus", effort: "high", cwd: "/play" } });
   assert.deepEqual(configured.args.slice(configured.args.indexOf("--model"), configured.args.indexOf("--model") + 2), ["--model", "opus"]);
+  assert.deepEqual(configured.args.slice(configured.args.indexOf("--effort"), configured.args.indexOf("--effort") + 2), ["--effort", "high"]);
   assert.equal(configured.cwd, "/play");
+
+  const codex = agentCommand({
+    root: "/repo",
+    tsxLoader: "file:///repo/node_modules/tsx/dist/loader.mjs",
+    agent: { model: "gpt-6.1-sol", effort: "high", cwd: "/playbook" },
+    gameLogDir: "/logs/games"
+  });
+  assert.equal(codex.program, "codex");
+  assert.equal(codex.command, "codex");
+  assert.equal(codex.cwd, "/playbook");
+  assert.ok(codex.args.includes("exec"));
+  assert.ok(codex.args.includes("--json"));
+  assert.deepEqual(codex.args.slice(codex.args.indexOf("--sandbox"), codex.args.indexOf("--sandbox") + 2), ["--sandbox", "danger-full-access"]);
+  assert.ok(codex.args.includes("mcp_servers.dominion.tool_timeout_sec=420"));
+  assert.ok(codex.args.includes('model_reasoning_effort="high"'));
+  assert.ok(codex.args.includes('mcp_servers.dominion.default_tools_approval_mode="approve"'));
+  assert.ok(codex.args.some((arg) => arg.includes("--game-log-dir") && arg.includes("/logs/games")));
+  assert.equal(codex.args.at(-1), "-");
 });
 
 test("the agent's stream shows its moves, its latest words and its final answer", () => {
@@ -62,4 +81,19 @@ test("the agent's stream shows its moves, its latest words and its final answer"
   const stopped: AgentStatus = { ...status, state: "stopped" };
   applyStreamEvent(stopped, { type: "result", result: "", is_error: true });
   assert.equal(stopped.state, "stopped");
+
+  const codexStatus: AgentStatus = { id: "b", kind: "play", state: "running", startedAt: 0, moves: 0, logPath: "/log" };
+  applyStreamEvent(codexStatus, {
+    type: "item.completed",
+    item: { type: "agent_message", text: "Opening Silver / Remodel." }
+  });
+  applyStreamEvent(codexStatus, {
+    type: "item.completed",
+    item: { type: "mcp_tool_call", server: "dominion", tool: "step", arguments: { decision: "d2", choose: ["buy:Silver"], reason: "Economy" }, error: null }
+  });
+  assert.equal(codexStatus.moves, 1);
+  assert.equal(codexStatus.lastReason, "Economy");
+  assert.equal(codexStatus.text, "Opening Silver / Remodel.");
+  applyStreamEvent(codexStatus, { type: "turn.completed" });
+  assert.equal(codexStatus.state, "done");
 });

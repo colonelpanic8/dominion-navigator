@@ -24,6 +24,17 @@ export type NewGameOptions = {
   kingdom?: string[];
 };
 
+export type FindMatchOptions = {
+  /** Number of players: 2, 3, or "any" for 2P or 3P (default 2). */
+  players?: 2 | 3 | "any";
+  /** Rated preference: true (Rated), false (Unrated), or "any" (Rated or Unrated; default). */
+  rated?: boolean | "any";
+  /** Maximum rating difference; otherwise retain the client's preference. */
+  maxRatingDifference?: number;
+  /** Maximum time to wait for a match in ms (default 180_000). */
+  timeoutMs?: number;
+};
+
 class ActionError extends Error {}
 
 export function readSession(): SessionState {
@@ -31,6 +42,7 @@ export function readSession(): SessionState {
   const user = name && name !== "NoName" ? name : undefined;
   const game = getGame();
   const tableService = getService("tableService");
+  const searching = Boolean(getService("automatch")?.iAmSearching?.());
 
   let table: SessionState["table"];
   if (tableService?.hasTable?.()) {
@@ -45,7 +57,7 @@ export function readSession(): SessionState {
     };
   }
 
-  const base = { ...(user ? { user } : {}), ...(table ? { table } : {}) };
+  const base = { ...(user ? { user } : {}), ...(searching ? { searching: true } : {}), ...(table ? { table } : {}) };
   if (game?.isRunning?.()) {
     const opponents = (game.state?.players ?? []).filter((player) => !player.isMe);
     return {
@@ -227,6 +239,111 @@ async function attempt(action: () => Promise<SessionState>): Promise<ActionResul
  */
 export function startBotGame(options: NewGameOptions): Promise<ActionResult> {
   return attempt(() => startGame(options));
+}
+
+const MATCH_TIMEOUT_MS = 180_000;
+
+function configureAutomatch(options: FindMatchOptions): void {
+  const automatch = getService("automatch");
+  const criteria = automatch?.matchingCriteria;
+  if (!automatch?.searchNow || !criteria) throw new ActionError("the client's automatch service is not available");
+  criteria.searchesBot = 0;
+  criteria.searchesHuman = true;
+  if (options.maxRatingDifference !== undefined) {
+    criteria.maxRatingDifference = options.maxRatingDifference;
+    criteria.minRatingDifference = -options.maxRatingDifference;
+  }
+  const prefs = criteria.automatchPreferences;
+  const Q = dominion.AUTOMATCH_QUESTION;
+  const P = dominion.MATCHING_PREFERENCE;
+  if (prefs && Q && P) {
+    const players = options.players ?? 2;
+    if (Q.NUMBER_OF_PLAYERS) {
+      const pref = players === 2 ? P.REQUIRE : players === 3 ? P.REJECT : P.EITHER;
+      if (pref) prefs.set(Q.NUMBER_OF_PLAYERS, pref);
+    }
+    const rated = options.rated ?? "any";
+    if (Q.RATED_GAME) {
+      const pref = rated === true ? P.REQUIRE : rated === false ? P.REJECT : P.EITHER;
+      if (pref) prefs.set(Q.RATED_GAME, pref);
+    }
+  }
+}
+
+async function searchForMatch(options: FindMatchOptions = {}): Promise<SessionState> {
+  const timeoutMs = options.timeoutMs ?? MATCH_TIMEOUT_MS;
+  if (options.players !== undefined && ![2, 3, "any"].includes(options.players)) throw new ActionError('players must be 2, 3 or "any"');
+  if (options.rated !== undefined && typeof options.rated !== "boolean" && options.rated !== "any") throw new ActionError('rated must be true, false or "any"');
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ActionError("timeoutMs must be positive and finite");
+  if (options.maxRatingDifference !== undefined && (!Number.isFinite(options.maxRatingDifference) || options.maxRatingDifference < 0)) {
+    throw new ActionError("maxRatingDifference must be non-negative and finite");
+  }
+  for (let pass = 0; pass < 5; pass += 1) {
+    const session = readSession();
+    switch (session.screen) {
+      case "login":
+        throw new ActionError("not logged in to dominion.games");
+      case "game": {
+        if (!session.game?.over) {
+          if (session.game?.opponentsAreBots) throw new ActionError("a bot game is in progress; resign it first");
+          return session;
+        }
+        const dismiss = document.querySelector<HTMLElement>('game-ended-notification [ng-click="$ctrl.ok()"]');
+        if (!dismiss) throw new ActionError("the end-of-game notice could not be dismissed");
+        dismiss.click();
+        await waitUntil(() => readSession().screen !== "game", SCREEN_CHANGE_TIMEOUT_MS);
+        break;
+      }
+      case "table": {
+        const tableService = getService("tableService");
+        const table = session.table;
+        const humanMatchTable = table && table.bots.length === 0 && table.players.length >= 2 && table.openSeats === 0;
+        if (humanMatchTable && tableService) {
+          if (!tableService.heroIsReady?.()) tableService.ready?.();
+          if (await waitUntil(() => inFreshGame() || readSession().screen !== "table", START_TIMEOUT_MS)) {
+            if (inFreshGame()) return readSession();
+          }
+          break;
+        }
+        tableService?.leave?.();
+        await waitUntil(() => readSession().screen === "lobby", SCREEN_CHANGE_TIMEOUT_MS);
+        break;
+      }
+      case "lobby": {
+        const automatch = getService("automatch");
+        if (!automatch?.searchNow) throw new ActionError("the client's automatch service is not available");
+        configureAutomatch(options);
+        if (!automatch.iAmSearching?.()) automatch.searchNow();
+        const started = Date.now();
+        let lastReadyMs = 0;
+        while (Date.now() - started < timeoutMs) {
+          if (inFreshGame()) return readSession();
+          const current = readSession();
+          if (current.screen === "table") {
+            const tableService = getService("tableService");
+            if (tableService && !tableService.heroIsReady?.() && Date.now() - lastReadyMs >= 1000) {
+              tableService.ready?.();
+              lastReadyMs = Date.now();
+            }
+          } else if (current.screen === "lobby" && !automatch.iAmSearching?.() && Date.now() - started >= 2000) {
+            automatch.searchNow();
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, POLL_MS));
+        }
+        automatch.cancel?.();
+        throw new ActionError("timed out waiting for a human opponent in automatch");
+      }
+    }
+  }
+  throw new ActionError(`could not start automatch from the ${readSession().screen} screen`);
+}
+
+/**
+ * Searches for a human opponent through the lobby's automatch queue, readies up
+ * when a matched table forms, and resolves once the game starts.
+ */
+export function findMatch(options: FindMatchOptions = {}): Promise<ActionResult> {
+  return attempt(() => searchForMatch(options));
 }
 
 /** Resigns the running game. The result arrives on the game screen; a new game dismisses it. */

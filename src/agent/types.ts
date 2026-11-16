@@ -100,8 +100,8 @@ export type DecisionGroup = {
   prompt: string;
   min: number;
   max: number;
-  /** Set when the order of the chosen options is the answer: the first goes on the bottom, the last on top. */
-  order?: "bottom-to-top";
+  /** Client answers are bottom-to-top; shared MCP text describes top-to-bottom indices. */
+  order?: "bottom-to-top" | "top-to-bottom";
 };
 
 export type Decision = {
@@ -222,6 +222,8 @@ export type CardGlossary = Record<string, GlossaryEntry>;
 export type SessionState = {
   screen: "login" | "lobby" | "table" | "game";
   user?: string;
+  /** True while automatch is searching for human opponents. */
+  searching?: boolean;
   table?: { id?: number; host: boolean; players: string[]; bots: string[]; openSeats: number };
   /** Present on the game screen. `over`: the result is in and the end-of-game notice is still up. */
   game?: { over: boolean; opponentsAreBots: boolean };
